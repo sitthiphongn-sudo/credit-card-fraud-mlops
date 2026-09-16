@@ -1,0 +1,32 @@
+"""ด่านตรวจก่อนอนุมัติ และการย้อนเวอร์ชัน — ผู้รับผิดชอบ: ธรรมรักษ์"""
+import sys
+
+from mlflow import MlflowClient
+
+from fraud.config import load_params
+
+
+def passes_gate(candidate: dict, champion: dict | None) -> tuple[bool, list[str]]:
+    g = load_params()["gate"]
+    reasons = []
+    if candidate["recall"] < g["min_recall"]:
+        reasons.append(f"recall {candidate['recall']:.3f} < {g['min_recall']}")
+    if champion and candidate["pr_auc"] < champion["pr_auc"] - g["max_pr_auc_drop"]:
+        reasons.append(f"pr_auc {candidate['pr_auc']:.4f} แย่กว่า champion {champion['pr_auc']:.4f}")
+    if candidate.get("p95_ms", 0) > g["max_p95_latency_ms"]:
+        reasons.append(f"p95 {candidate['p95_ms']} ms เกิน SLO")
+    if candidate.get("model_mb", 0) > g["max_model_mb"]:
+        reasons.append(f"model {candidate['model_mb']} MB ใหญ่เกิน")
+    return (not reasons), reasons
+
+
+def rollback(to_version: str) -> None:
+    """ย้าย alias champion กลับไปเวอร์ชันที่ระบุ — API โหลด models:/<name>@champion จึงไม่ต้องแก้โค้ด"""
+    r = load_params()["registry"]
+    MlflowClient().set_registered_model_alias(r["model_name"], r["champion_alias"], to_version)
+    print(f"champion -> version {to_version}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "rollback":
+        rollback(sys.argv[2])

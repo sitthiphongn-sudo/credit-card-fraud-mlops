@@ -1,0 +1,9 @@
+# TODO(โชติกานต์): เพิ่มกฎ drift / concept drift (อ้างอิง Lab 10) — เกณฑ์ต้องตรงกับ configs/params.yaml
+groups:
+  - name: system-health
+    rules:
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum by (le) (rate(fraud_request_latency_seconds_bucket[1m]))) > 0.1
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "p95 latency เกิน SLO 100 ms"}

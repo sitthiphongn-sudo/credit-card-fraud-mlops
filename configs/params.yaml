@@ -1,0 +1,22 @@
+# ค่าคงที่และเกณฑ์ทั้งหมดอยู่ที่นี่ ทุกส่วน (pipeline, gate, API, monitoring) อ่านจากไฟล์นี้
+seed: 42
+data:
+  raw_path: data/raw/creditcard.csv
+  processed_dir: data/processed
+  target: Class
+  split: {train: 0.6, val: 0.2, test: 0.2}   # เรียงตาม Time ไม่สุ่ม
+cost:
+  review_fee_thb: 50        # ต้นทุน false positive ต่อรายการ
+gate:
+  min_recall: 0.75
+  max_pr_auc_drop: 0.005    # เทียบกับ champion
+  max_p95_latency_ms: 100
+  max_model_mb: 50
+monitoring:
+  drift_share: 0.30
+  max_recall_drop: 0.10
+  concept_gap: 0.10
+registry:
+  model_name: fraud-detector
+  champion_alias: champion
+  challenger_alias: challenger

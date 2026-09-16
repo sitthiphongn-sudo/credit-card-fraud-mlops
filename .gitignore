@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+mlruns/
+mlartifacts/
+artifacts/
+reports/*
+!reports/.gitkeep
+.pytest_cache/
+.ruff_cache/
+docs/*.docx
