@@ -8,7 +8,7 @@ data:
 cost:
   review_fee_thb: 50        # ต้นทุน false positive ต่อรายการ
 gate:
-  min_recall: 0.75
+  min_recall: 1.01
   max_pr_auc_drop: 0.005    # เทียบกับ champion
   max_p95_latency_ms: 100
   max_model_mb: 50
