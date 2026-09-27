@@ -12,7 +12,7 @@ def file_hash(path: str | Path) -> str:
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    return h.hexdigest()[:12]
+    return h.hexdigest()
 
 
 def load_raw(path: str | Path | None = None) -> pd.DataFrame:
