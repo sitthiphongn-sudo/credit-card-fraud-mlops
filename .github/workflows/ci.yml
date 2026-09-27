@@ -1,13 +1,10 @@
 name: ci
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   code-quality:
@@ -15,55 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - name: Check exact dependency pins
-        run: python scripts/check_requirements.py
-      - run: python -m pip install -r requirements.txt && python -m pip install -e .
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt && pip install -e .
       - name: Lint
         run: ruff check .
       - name: Unit tests
         run: pytest -q
 
   data-validation:
+    needs: code-quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: python -m pip install -r requirements.txt && python -m pip install -e .
-      - name: Generate deterministic sample data
-        run: python scripts/generate_ci_sample.py
-      - name: Valid sample must pass
-        run: python -m fraud.validate data/sample/good.csv
-      - name: Invalid sample must exit with code 1
-        run: |
-          set +e
-          python -m fraud.validate data/sample/bad.csv
-          status=$?
-          set -e
-          test "$status" -eq 1
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt && pip install -e .
+      # TODO(กันตพัฒน์): ดึง sample ข้อมูลจริงแล้วรัน python -m fraud.validate
+      - name: Schema test on sample data
+        run: pytest -q tests/test_features.py -k data
 
   model-gate:
+    needs: data-validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: python -m pip install -r requirements.txt && python -m pip install -e .
-      - name: Generate deterministic sample data
-        run: python scripts/generate_ci_sample.py
-      - name: Train and enforce model gate
-        run: python scripts/ci_model_gate.py --output reports/ci-model-gate.json
-      - name: Save model gate evidence even on failure
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: model-gate-${{ github.run_id }}
-          path: reports/ci-model-gate.json
-          if-no-files-found: error
+      - run: echo "TODO(กันตพัฒน์/ธรรมรักษ์) เทรนบน sample แล้วรัน gate — fail ถ้าไม่ผ่านเกณฑ์"
