@@ -9,6 +9,14 @@ from fraud.config import load_params
 def passes_gate(candidate: dict, champion: dict | None) -> tuple[bool, list[str]]:
     g = load_params()["gate"]
     reasons = []
+    required_metrics = ("recall", "pr_auc", "p95_ms", "model_mb")
+
+    for metric_name in required_metrics:
+        if metric_name not in candidate:
+            reasons.append(f"missing metric: {metric_name}")
+
+    if reasons:
+        return False, reasons
     if candidate["recall"] < g["min_recall"]:
         reasons.append(f"recall {candidate['recall']:.3f} < {g['min_recall']}")
     if champion and candidate["pr_auc"] < champion["pr_auc"] - g["max_pr_auc_drop"]:
