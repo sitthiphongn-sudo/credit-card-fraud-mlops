@@ -1,6 +1,11 @@
 from types import SimpleNamespace
 
-from fraud.gate import passes_gate, promote_to_champion, register_challenger
+from fraud.gate import (
+    passes_gate,
+    promote_to_champion,
+    register_challenger,
+    rollback,
+)
 
 
 def good_candidate(**changes):
@@ -126,4 +131,24 @@ def test_promote_to_champion_moves_alias(monkeypatch):
         "fraud-detector",
         "champion",
         "7",
+    )
+
+def test_rollback_moves_champion_to_requested_version(monkeypatch):
+    calls = {}
+
+    class FakeClient:
+        def set_registered_model_alias(self, name, alias, version):
+            calls["alias"] = (name, alias, version)
+
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    rollback("4")
+
+    assert calls["alias"] == (
+        "fraud-detector",
+        "champion",
+        "4",
     )
