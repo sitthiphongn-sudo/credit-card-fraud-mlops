@@ -11,4 +11,4 @@
 | 2026-09-28 | นาคินทร์ | Claude | เพิ่มการตรวจค่าที่หายไป (NaN/None) ใน `_validate_columns` ให้ raise ValueError ระบุคอลัมน์และจำนวนแถว พร้อมเทสต์ 3 ข้อ (DataFrame, JSON ทีละรายการ, fit) | `src/fraud/features.py, tests/test_features.py` |
 | 2026-09-27 | เปรมสิริวัฒน์ | ChatGPT | ช่วยวางขั้นตอน EDA, data split/versioning, คำนวณ schema จาก train data, ปรับ validation, สร้าง sample data ปกติ/ผิดปกติ และตรวจ ruff/pytest ในไฟล์ `src/fraud/data.py`, `src/fraud/validate.py`, `scripts/eda.py`, `scripts/schema_stats.py`, `scripts/make_samples.py` | นำคำแนะนำมาปรับใช้และทดสอบจริงด้วย `ruff`, `pytest` และ validation test |
 
-| 2026-09-28 | ธรรมรักษ์ | Codex | แนะนำการเขียน test, ตรวจ metrics ที่ขาด และเพิ่มคำสั่ง check/rollback สำหรับ model gate | `src/fraud/gate.py`, `tests/test_gate.py`, `Makefile` |
+| 2026-09-28 | ธรรมรักษ์ | Codex | แนะนำฟังก์ชันลงทะเบียน challenger, promote champion และ unit tests แบบจำลอง MLflow | `src/fraud/gate.py`, `tests/test_gate.py` |

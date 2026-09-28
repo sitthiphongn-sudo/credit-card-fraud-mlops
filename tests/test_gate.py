@@ -1,4 +1,6 @@
-from fraud.gate import passes_gate
+from types import SimpleNamespace
+
+from fraud.gate import passes_gate, promote_to_champion, register_challenger
 
 
 def good_candidate(**changes):
@@ -53,3 +55,75 @@ def test_missing_latency_does_not_pass():
 
     assert passed is False
     assert any("p95_ms" in reason for reason in reasons)
+
+def test_register_challenger_sets_alias_and_tags(monkeypatch):
+    calls = {"tags": []}
+
+    def fake_register_model(**kwargs):
+        calls["register"] = kwargs
+        return SimpleNamespace(version=7)
+
+    class FakeClient:
+        def set_registered_model_alias(self, name, alias, version):
+            calls["alias"] = (name, alias, version)
+
+        def set_model_version_tag(self, name, version, key, value):
+            calls["tags"].append((name, version, key, value))
+
+    monkeypatch.setattr(
+        "fraud.gate.mlflow.register_model",
+        fake_register_model,
+    )
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    version = register_challenger(
+        run_id="run-123",
+        metrics={"recall": 0.80, "pr_auc": 0.90},
+    )
+
+    assert version == "7"
+    assert calls["register"] == {
+        "model_uri": "runs:/run-123/model",
+        "name": "fraud-detector",
+    }
+    assert calls["alias"] == (
+        "fraud-detector",
+        "challenger",
+        "7",
+    )
+    assert (
+        "fraud-detector",
+        "7",
+        "run_id",
+        "run-123",
+    ) in calls["tags"]
+    assert (
+        "fraud-detector",
+        "7",
+        "metric.recall",
+        "0.8",
+    ) in calls["tags"]
+
+
+def test_promote_to_champion_moves_alias(monkeypatch):
+    calls = {}
+
+    class FakeClient:
+        def set_registered_model_alias(self, name, alias, version):
+            calls["alias"] = (name, alias, version)
+
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    promote_to_champion("7")
+
+    assert calls["alias"] == (
+        "fraud-detector",
+        "champion",
+        "7",
+    )

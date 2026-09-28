@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+import mlflow
 from mlflow import MlflowClient
 
 from fraud.config import load_params
@@ -39,6 +40,53 @@ def load_metrics(path: Path) -> dict:
         raise ValueError("metrics file must contain a JSON object")
 
     return metrics
+
+def register_challenger(run_id: str, metrics: dict) -> str:
+    """ลงทะเบียนโมเดลจาก MLflow run และตั้ง alias เป็น challenger."""
+    registry = load_params()["registry"]
+    model_name = registry["model_name"]
+
+    result = mlflow.register_model(
+        model_uri=f"runs:/{run_id}/model",
+        name=model_name,
+    )
+    version = str(result.version)
+
+    client = MlflowClient()
+    client.set_registered_model_alias(
+        model_name,
+        registry["challenger_alias"],
+        version,
+    )
+    client.set_model_version_tag(
+        model_name,
+        version,
+        "run_id",
+        run_id,
+    )
+
+    for metric_name, metric_value in sorted(metrics.items()):
+        client.set_model_version_tag(
+            model_name,
+            version,
+            f"metric.{metric_name}",
+            str(metric_value),
+        )
+
+    return version
+
+
+def promote_to_champion(version: str) -> None:
+    """เลื่อน challenger ที่ผ่าน gate ให้เป็น champion."""
+    registry = load_params()["registry"]
+
+    MlflowClient().set_registered_model_alias(
+        registry["model_name"],
+        registry["champion_alias"],
+        version,
+    )
+
+    print(f"champion -> version {version}")
 
 def rollback(to_version: str) -> None:
     """ย้าย alias champion กลับไปยังเวอร์ชันที่ระบุ"""
