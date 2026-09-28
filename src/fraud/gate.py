@@ -1,5 +1,8 @@
 """ด่านตรวจก่อนอนุมัติ และการย้อนเวอร์ชัน — ผู้รับผิดชอบ: ธรรมรักษ์"""
-import sys
+
+import argparse
+import json
+from pathlib import Path
 
 from mlflow import MlflowClient
 
@@ -28,13 +31,77 @@ def passes_gate(candidate: dict, champion: dict | None) -> tuple[bool, list[str]
     return (not reasons), reasons
 
 
+def load_metrics(path: Path) -> dict:
+    with path.open(encoding="utf-8") as file:
+        metrics = json.load(file)
+
+    if not isinstance(metrics, dict):
+        raise ValueError("metrics file must contain a JSON object")
+
+    return metrics
+
 def rollback(to_version: str) -> None:
-    """ย้าย alias champion กลับไปเวอร์ชันที่ระบุ — API โหลด models:/<name>@champion จึงไม่ต้องแก้โค้ด"""
-    r = load_params()["registry"]
-    MlflowClient().set_registered_model_alias(r["model_name"], r["champion_alias"], to_version)
+    """ย้าย alias champion กลับไปยังเวอร์ชันที่ระบุ"""
+    registry = load_params()["registry"]
+
+    MlflowClient().set_registered_model_alias(
+        registry["model_name"],
+        registry["champion_alias"],
+        to_version,
+    )
+
     print(f"champion -> version {to_version}")
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="ตรวจ model gate หรือย้อนเวอร์ชัน champion"
+    )
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
+
+    check_parser = subparsers.add_parser(
+        "check",
+        help="ตรวจ metrics ของ candidate",
+    )
+    check_parser.add_argument(
+        "--candidate",
+        type=Path,
+        required=True,
+    )
+    check_parser.add_argument(
+        "--champion",
+        type=Path,
+    )
+
+    rollback_parser = subparsers.add_parser(
+        "rollback",
+        help="ย้อน champion ไปยังเวอร์ชันที่ระบุ",
+    )
+    rollback_parser.add_argument("version")
+
+    args = parser.parse_args()
+
+    if args.command == "rollback":
+        rollback(args.version)
+        return 0
+
+    candidate = load_metrics(args.candidate)
+    champion = load_metrics(args.champion) if args.champion else None
+
+    passed, reasons = passes_gate(candidate, champion)
+
+    if passed:
+        print("PASS: candidate ผ่าน model gate")
+        return 0
+
+    print("FAIL: candidate ไม่ผ่าน model gate")
+    for reason in reasons:
+        print(f"- {reason}")
+
+    return 1
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "rollback":
-        rollback(sys.argv[2])
+    raise SystemExit(main())
