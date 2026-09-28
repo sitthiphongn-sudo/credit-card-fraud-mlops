@@ -256,3 +256,24 @@ def test_negative_amount_raises_clear_error(train_df, fitted_transformer):
     broken.loc[0, "Amount"] = -10.0
     with pytest.raises(ValueError, match="Amount"):
         fitted_transformer.transform(broken)
+
+def test_nan_in_dataframe_raises_clear_error(train_df, fitted_transformer):
+    broken = train_df.copy()
+    broken.loc[3, "V7"] = np.nan
+    with pytest.raises(ValueError, match="V7"):
+        fitted_transformer.transform(broken)
+
+
+def test_null_in_single_json_record_raises_clear_error(train_df, fitted_transformer):
+    # จำลอง request ที่ส่ง null มาใน JSON (ฝั่งให้บริการ)
+    record = json.loads(train_df.iloc[0].to_json())
+    record["Amount"] = None
+    with pytest.raises(ValueError, match="Amount"):
+        fitted_transformer.transform(record)
+
+
+def test_fit_rejects_nan_in_training_data(train_df):
+    broken = train_df.copy()
+    broken.loc[0, "Time"] = np.nan
+    with pytest.raises(ValueError, match="Time"):
+        FraudFeatureTransformer().fit(broken)
