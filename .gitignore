@@ -4,8 +4,6 @@ __pycache__/
 .env
 data/raw/*
 data/processed/*
-data/sample/*
-!data/sample/.gitkeep
 !data/**/.gitkeep
 mlruns/
 mlartifacts/
@@ -14,5 +12,4 @@ reports/*
 !reports/.gitkeep
 .pytest_cache/
 .ruff_cache/
-*.egg-info/
 docs/*.docx

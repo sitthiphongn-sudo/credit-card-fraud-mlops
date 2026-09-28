@@ -18,39 +18,22 @@
 | โชติกานต์ | Monitoring & Drift | `monitoring/` |
 | ธรรมรักษ์ | Pipeline & Model Registry | `pipelines/`, `src/fraud/gate.py` |
 
-## รันจากเครื่องใหม่
+## ชุดข้อมูล
 
-ต้องมี Docker Engine พร้อม Compose plugin, GNU Make, Git, อินเทอร์เน็ตสำหรับดาวน์โหลด image/แพ็กเกจ/ข้อมูล และพอร์ต 5000, 8000, 9090, 3000 ที่ว่าง จากโฟลเดอร์รีโปให้รัน:
+[Credit Card Fraud Detection (ULB)](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) — 284,807 รายการ, fraud 492 (0.172%)
+ดาวน์โหลด `creditcard.csv` แล้ววางที่ `data/raw/creditcard.csv` (ไฟล์ข้อมูลไม่ถูก commit)
 
-```bash
-make all
-```
-
-คำสั่งนี้สั่ง Compose สร้าง MLflow → ดาวน์โหลด [Credit Card Fraud Detection (ULB) จากแหล่งที่ TensorFlow ใช้](https://www.tensorflow.org/tutorials/structured_data/imbalanced_data) ถ้ายังไม่มี `data/raw/creditcard.csv` → ตรวจ schema → แบ่งตามเวลา → เทรน → ประเมินบนชุดทดสอบ → ตรวจ gate → ขึ้นทะเบียนและตั้ง alias `champion` → เริ่ม API, Prometheus และ Grafana เมื่อ API healthy ข้อมูลดิบไม่ถูก commit; hash และจำนวนแถวแยกชุดบันทึกใน `data/processed/data_version.json` ส่วน MLflow ใช้ named volume `mlflow-data` เพื่อคงทะเบียนและ artifacts หลัง restart
-
-ถ้าเครื่องไม่มี Make ใช้คำสั่ง Compose ที่เทียบเท่า:
+## เริ่มใช้งาน
 
 ```bash
-docker compose up -d --build --force-recreate --wait
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+
+make validate   # ตรวจ schema ข้อมูลดิบ
+make all        # รันทั้ง pipeline ด้วยคำสั่งเดียว
+docker compose up -d --build   # mlflow :5000 · api :8000 · prometheus :9090 · grafana :3000
 ```
-
-`docker compose up -d --build` ยกทั้งระบบจากเครื่องใหม่ได้เช่นกัน แต่ `--wait` ทำให้ shell รอจนบริการพร้อมและคืนสถานะล้มเหลวหากเริ่มไม่สำเร็จ หากมี CSV อยู่แล้วและต้องการใช้ไฟล์นั้น ให้คัดลอกไปยัง `data/raw/creditcard.csv` ก่อนรัน; เวอร์ชันข้อมูลบันทึกจาก SHA-256 ของไฟล์ดิบ
-
-ตรวจผล:
-
-```bash
-docker compose ps
-curl http://localhost:8000/health
-docker compose logs trainer
-```
-
-API อยู่ที่ `:8000`, MLflow `:5000`, Prometheus `:9090`, Grafana `:3000` (รหัสเริ่มต้นใน Compose สำหรับการสาธิตเท่านั้น) ถ้า gate ไม่ผ่าน trainer จะออกด้วย code 1 และ API ไม่เริ่ม; ดูเหตุผลใน `docker compose logs trainer` การหยุดใช้ `make down`
-
-## Pull Request CI
-
-ทุก PR รันสาม job แยกกัน: `code-quality` ตรวจ exact pins, Ruff, pytest; `data-validation` สร้างข้อมูลตัวอย่างสังเคราะห์ที่ทำซ้ำได้แล้วตรวจไฟล์ดีต้องผ่านและไฟล์เสียต้องออก code 1; `model-gate` เทรน Logistic Regression บนตัวอย่างนั้น ตรวจ recall, PR-AUC, p95 ของการทำนายหนึ่งรายการ และขนาดโมเดล ผ่าน `passes_gate()` ไฟล์ `reports/ci-model-gate.json` ถูกอัปโหลดเป็น artifact แม้ gate ล้มเหลว ตัวอย่างสังเคราะห์เป็น smoke test ของสาย CI; ผล gate บนข้อมูลจริงเกิดซ้ำใน trainer ก่อนขึ้นทะเบียนโมเดล
-
-ตั้ง branch protection ใน GitHub Settings → Branches สำหรับ `main`: Require a pull request, 1 approval, และ required status checks `code-quality`, `data-validation`, `model-gate` หลังมี run แรก การตั้งค่านี้ต้องทำโดยผู้ดูแลรีโป แล้วเก็บ URL ของ run สีแดงและสีเขียวพร้อม artifact ไว้ในรายงาน ห้ามใช้ผล local แทนหลักฐาน GitHub Actions
 
 ## โครงสร้าง
 

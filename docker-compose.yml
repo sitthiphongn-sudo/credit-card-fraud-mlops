@@ -1,85 +1,32 @@
 services:
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.22.1
-    command:
-      - mlflow
-      - server
-      - --host
-      - 0.0.0.0
-      - --port
-      - "5000"
-      - --backend-store-uri
-      - sqlite:////mlflow/mlflow.db
-      - --serve-artifacts
-      - --artifacts-destination
-      - /mlflow/artifacts
-    volumes:
-      - mlflow-data:/mlflow
-    ports:
-      - "5000:5000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
-  trainer:
-    build: {context: ., dockerfile: serving/Dockerfile}
-    command: ["sh", "-c", "python pipelines/flow.py && touch /tmp/trainer-ready && exec sleep infinity"]
-    volumes:
-      - ./data/raw:/app/data/raw
-      - ./data/processed:/app/data/processed
-      - ./reports:/app/reports
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      PREFECT_HOME: /tmp/prefect
-    depends_on:
-      mlflow:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/trainer-ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 120
-      start_period: 10s
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow/mlflow.db --default-artifact-root /mlflow/artifacts
+    volumes: ["./mlruns:/mlflow"]
+    ports: ["5000:5000"]
 
   api:
     build: {context: ., dockerfile: serving/Dockerfile}
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MODEL_URI: models:/fraud-detector@champion
-    ports:
-      - "8000:8000"
-    depends_on:
-      trainer:
-        condition: service_healthy
+    ports: ["8000:8000"]
+    depends_on: [mlflow]
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8000/health'))['status']=='ok'"]
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      retries: 5
 
   prometheus:
     image: prom/prometheus:v3.1.0
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
-    ports:
-      - "9090:9090"
-    depends_on:
-      api:
-        condition: service_healthy
+    ports: ["9090:9090"]
+    depends_on: [api]
 
   grafana:
     image: grafana/grafana:11.5.1
     environment: {GF_SECURITY_ADMIN_PASSWORD: admin}
-    ports:
-      - "3000:3000"
-    depends_on:
-      prometheus:
-        condition: service_started
-
-volumes:
-  mlflow-data:
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
