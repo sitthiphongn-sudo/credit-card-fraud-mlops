@@ -17,7 +17,6 @@ DataFrame เป็นก้อนใหญ่) และตอนให้บ�
    validation/test/production โดยไม่ fit ซ้ำ — ป้องกัน data leakage และบันทึก/
    โหลดค่าที่ fit แล้วด้วย joblib เพื่อให้ฝั่งให้บริการใช้ค่าเดียวกับฝั่งเทรนเป๊ะ ๆ
 """
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +26,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 # ชื่อคอลัมน์ฟีเจอร์ที่ผ่าน PCA มาแล้วในชุดข้อมูลต้นทาง (V1 ถึง V28)
@@ -201,3 +201,16 @@ def save_transformer(transformer: FraudFeatureTransformer, path: Union[str, Path
 def load_transformer(path: Union[str, Path]) -> FraudFeatureTransformer:
     """โหลด transformer ที่บันทึกไว้ด้วย :func:`save_transformer` กลับมาใช้งาน"""
     return joblib.load(Path(path))
+
+
+TARGET_COLUMN = "Class"
+
+
+def split_xy(df: pd.DataFrame):
+    """แยกฟีเจอร์ (X) กับป้ายกำกับ (y) ออกจาก DataFrame"""
+    return df.drop(columns=[TARGET_COLUMN]), df[TARGET_COLUMN]
+
+
+def build_pipeline(estimator) -> Pipeline:
+    """ต่อ FraudFeatureTransformer เข้ากับโมเดลเป็น Pipeline เดียว"""
+    return Pipeline([("features", FraudFeatureTransformer()), ("model", estimator)])
