@@ -8,6 +8,7 @@ from prefect import flow, task
 from fraud.config import ROOT, load_params
 from fraud.data import file_hash, load_raw, time_split
 from fraud.gate import (
+    model_size_mb,
     passes_gate,
     promote_to_champion,
     register_challenger,
@@ -36,6 +37,16 @@ def split(df):
 @task
 def train(train_df, val_df, data_version):
     return train_baseline(train_df, val_df, data_version)
+
+@task
+def add_model_size(
+    run_id: str,
+    candidate_metrics: dict,
+) -> dict:
+    """เพิ่มขนาด model artifact ลงใน candidate metrics."""
+    complete_metrics = dict(candidate_metrics)
+    complete_metrics["model_mb"] = model_size_mb(run_id)
+    return complete_metrics
 
 @task
 def register_candidate(run_id: str, candidate_metrics: dict) -> str:
@@ -69,11 +80,18 @@ def release_pipeline(
     candidate_metrics: dict,
     champion_metrics: dict | None = None,
 ) -> str:
-    version = register_candidate(run_id, candidate_metrics)
+    complete_metrics = add_model_size(
+        run_id,
+        candidate_metrics,
+    )
+    version = register_candidate(
+        run_id,
+        complete_metrics,
+    )
 
     return promote_if_approved(
         version,
-        candidate_metrics,
+        complete_metrics,
         champion_metrics,
     )
 

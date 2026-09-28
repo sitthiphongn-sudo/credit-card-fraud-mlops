@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
+
 from fraud.gate import (
+    model_size_mb,
     passes_gate,
     promote_to_champion,
     register_challenger,
@@ -152,3 +155,30 @@ def test_rollback_moves_champion_to_requested_version(monkeypatch):
         "champion",
         "4",
     )
+
+def test_model_size_mb_sums_all_artifact_files(
+    monkeypatch,
+    tmp_path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "model.pkl").write_bytes(b"a" * 1024)
+
+    metadata_dir = model_dir / "metadata"
+    metadata_dir.mkdir()
+    (metadata_dir / "MLmodel").write_bytes(b"b" * 2048)
+
+    class FakeClient:
+        def download_artifacts(self, run_id, path):
+            assert run_id == "run-123"
+            assert path == "model"
+            return str(model_dir)
+
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    size = model_size_mb("run-123")
+
+    assert size == pytest.approx(3072 / (1024 * 1024))

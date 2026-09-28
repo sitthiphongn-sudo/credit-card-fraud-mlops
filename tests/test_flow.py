@@ -1,6 +1,10 @@
 import pytest
 
-from pipelines.flow import promote_if_approved, register_candidate
+from pipelines.flow import (
+    add_model_size,
+    promote_if_approved,
+    register_candidate,
+)
 
 
 def good_metrics(**changes):
@@ -71,3 +75,24 @@ def test_failed_candidate_keeps_current_champion(monkeypatch):
         )
 
     assert promoted == []
+
+def test_add_model_size_preserves_input_metrics(monkeypatch):
+    monkeypatch.setattr(
+        "pipelines.flow.model_size_mb",
+        lambda run_id: 12.5,
+    )
+    original = {
+        "recall": 0.80,
+        "pr_auc": 0.90,
+        "p95_ms": 80,
+    }
+
+    result = add_model_size.fn("run-123", original)
+
+    assert result == {
+        "recall": 0.80,
+        "pr_auc": 0.90,
+        "p95_ms": 80,
+        "model_mb": 12.5,
+    }
+    assert "model_mb" not in original

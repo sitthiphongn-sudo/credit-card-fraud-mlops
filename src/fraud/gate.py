@@ -41,6 +41,26 @@ def load_metrics(path: Path) -> dict:
 
     return metrics
 
+def model_size_mb(run_id: str) -> float:
+    """ดาวน์โหลด model artifact และคำนวณขนาดรวมเป็น MB."""
+    artifact_path = Path(
+        MlflowClient().download_artifacts(
+            run_id,
+            "model",
+        )
+    )
+
+    if artifact_path.is_file():
+        total_bytes = artifact_path.stat().st_size
+    else:
+        total_bytes = sum(
+            path.stat().st_size
+            for path in artifact_path.rglob("*")
+            if path.is_file()
+        )
+
+    return total_bytes / (1024 * 1024)
+
 def register_challenger(run_id: str, metrics: dict) -> str:
     """ลงทะเบียนโมเดลจาก MLflow run และตั้ง alias เป็น challenger."""
     registry = load_params()["registry"]
