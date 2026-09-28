@@ -1,4 +1,4 @@
-"""Data schema and validation for the fraud detection pipeline."""
+"""Data schemas and validation for the fraud detection pipeline."""
 
 import logging
 import sys
@@ -10,6 +10,7 @@ log = logging.getLogger("fraud.validate")
 
 V_COLS = [f"V{i}" for i in range(1, 29)]
 FEATURES = ["Time", *V_COLS, "Amount"]
+
 
 V_RANGES = {
     "V1": (-68.176853, 14.208551),
@@ -45,6 +46,53 @@ V_RANGES = {
 AMOUNT_MAX = 3000.0
 
 
+# ---------------------------------------------------------
+# Raw schema
+# Used before the time-based split.
+# It checks structure and obviously invalid values only.
+# ---------------------------------------------------------
+
+_raw_cols = {
+    "Time": pa.Column(
+        float,
+        pa.Check.ge(0),
+        nullable=False,
+        coerce=True,
+    ),
+    **{
+        col: pa.Column(
+            float,
+            nullable=False,
+            coerce=True,
+        )
+        for col in V_COLS
+    },
+    "Amount": pa.Column(
+        float,
+        pa.Check.ge(0),
+        nullable=False,
+        coerce=True,
+    ),
+    "Class": pa.Column(
+        int,
+        pa.Check.isin([0, 1]),
+        nullable=False,
+        coerce=True,
+    ),
+}
+
+
+raw_schema = pa.DataFrameSchema(
+    _raw_cols,
+    strict=True,
+)
+
+
+# ---------------------------------------------------------
+# Strict feature/training schema
+# Statistical ranges are derived from training data.
+# ---------------------------------------------------------
+
 _feature_cols = {
     "Time": pa.Column(
         float,
@@ -52,6 +100,21 @@ _feature_cols = {
         nullable=False,
         coerce=True,
     ),
+    **{
+        col: pa.Column(
+            float,
+            pa.Check.in_range(
+                min_value,
+                max_value,
+            ),
+            nullable=False,
+            coerce=True,
+        )
+        for col, (
+            min_value,
+            max_value,
+        ) in V_RANGES.items()
+    },
     "Amount": pa.Column(
         float,
         [
@@ -61,15 +124,6 @@ _feature_cols = {
         nullable=False,
         coerce=True,
     ),
-    **{
-        col: pa.Column(
-            float,
-            pa.Check.in_range(min_value, max_value),
-            nullable=False,
-            coerce=True,
-        )
-        for col, (min_value, max_value) in V_RANGES.items()
-    },
 }
 
 
@@ -93,43 +147,89 @@ training_schema = pa.DataFrameSchema(
 )
 
 
+def _log_schema_errors(
+    prefix: str,
+    err: pa.errors.SchemaErrors,
+) -> None:
+    """Log validation errors with per-column counts."""
+    cases = err.failure_cases
+
+    log.error(
+        "%s: %d problems",
+        prefix,
+        len(cases),
+    )
+
+    if "column" in cases.columns:
+        column_counts = (
+            cases["column"]
+            .fillna("DATAFRAME")
+            .value_counts()
+        )
+
+        for column, count in column_counts.items():
+            log.error(
+                "Column %s has %d validation problem(s)",
+                column,
+                count,
+            )
+
+    log.error(
+        "Failure details:\n%s",
+        cases.head(20),
+    )
+
+
+def validate_raw(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Validate raw input before splitting.
+
+    This intentionally does not enforce training-derived
+    V-ranges or the Amount p99.9 limit.
+    """
+    try:
+        return raw_schema.validate(
+            df,
+            lazy=True,
+        )
+
+    except pa.errors.SchemaErrors as err:
+        _log_schema_errors(
+            "RAW DATA VALIDATION FAILED",
+            err,
+        )
+        raise
+
+
 def validate(
     df: pd.DataFrame,
     with_target: bool = True,
 ) -> pd.DataFrame:
-    """Validate a dataframe against the expected schema."""
-    schema = training_schema if with_target else feature_schema
+    """
+    Validate data using the strict training-derived schema.
+
+    This is used for sample validation, CI tests,
+    and checks where statistical bounds are expected.
+    """
+    schema = (
+        training_schema
+        if with_target
+        else feature_schema
+    )
 
     try:
-        return schema.validate(df, lazy=True)
+        return schema.validate(
+            df,
+            lazy=True,
+        )
 
     except pa.errors.SchemaErrors as err:
-        cases = err.failure_cases
-
-        log.error(
-            "DATA VALIDATION FAILED: %d problems",
-            len(cases),
+        _log_schema_errors(
+            "DATA VALIDATION FAILED",
+            err,
         )
-
-        if "column" in cases.columns:
-            column_counts = (
-                cases["column"]
-                .fillna("DATAFRAME")
-                .value_counts()
-            )
-
-            for column, count in column_counts.items():
-                log.error(
-                    "Column %s has %d validation problem(s)",
-                    column,
-                    count,
-                )
-
-        log.error(
-            "Failure details:\n%s",
-            cases.head(20),
-        )
-
         raise
 
 
@@ -143,9 +243,14 @@ if __name__ == "__main__":
     )
 
     try:
-        validate(pd.read_csv(path))
+        validate(
+            pd.read_csv(path),
+        )
 
     except pa.errors.SchemaErrors:
         sys.exit(1)
 
-    log.info("data OK: %s", path)
+    log.info(
+        "data OK: %s",
+        path,
+    )
