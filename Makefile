@@ -10,10 +10,10 @@ validate:
 	python -m fraud.validate data/raw/creditcard.csv
 
 all:
-	docker compose up -d --build --force-recreate --wait
+	python pipelines/flow.py
 
 serve:
-	docker compose up -d --build --wait
+	docker compose up -d --build
 
 down:
 	docker compose down
