@@ -137,6 +137,18 @@ def test_logreg_class_weight_switches_on_only_for_class_weight_strategy():
     assert plain["class_weight"] is None
 
 
+def test_boosting_weight_strategies():
+    assert T.boosting_weight("class_weight", 576.0) == 576.0
+    assert T.boosting_weight("sqrt_weight", 576.0) == 24.0
+    assert T.boosting_weight("none", 576.0) == 1.0
+
+
+def test_lightgbm_sqrt_weight_uses_square_root_of_training_ratio():
+    pytest.importorskip("lightgbm")
+    _, params = T.build_estimator(T.EXPERIMENTS_BY_NAME["lightgbm_sqrt_weight"], seed=42, pos_weight=576.0)
+    assert params["scale_pos_weight"] == 24.0
+
+
 def test_lightgbm_uses_scale_pos_weight_from_training_ratio():
     pytest.importorskip("lightgbm")
     _, params = T.build_estimator(T.EXPERIMENTS_BY_NAME["lightgbm_class_weight"], seed=42, pos_weight=577.0)

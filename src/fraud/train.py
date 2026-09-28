@@ -93,7 +93,7 @@ class Experiment:
 
     name: str
     family: str  # rule | logreg | lightgbm | xgboost
-    imbalance: str  # none | class_weight | undersample
+    imbalance: str  # none | class_weight | sqrt_weight | undersample
     params: dict = field(default_factory=dict)
 
 
@@ -123,6 +123,10 @@ EXPERIMENTS = [
     Experiment("logreg_undersample", "logreg", "undersample", LOGREG_PARAMS),
     # โมเดลต้นไม้แบบ boosting ถ่วงน้ำหนักคลาสด้วย scale_pos_weight
     Experiment("lightgbm_class_weight", "lightgbm", "class_weight", LIGHTGBM_PARAMS),
+    # ข้อมูลจริง (28 ก.ย.): lightgbm_class_weight ได้ val PR-AUC 0.0069 เพราะ scale_pos_weight ~580
+    # แรงเกินจนคะแนนอิ่มตัว จึงเพิ่มสองแบบนี้เพื่อหาน้ำหนักที่เหมาะ
+    Experiment("lightgbm_none", "lightgbm", "none", LIGHTGBM_PARAMS),
+    Experiment("lightgbm_sqrt_weight", "lightgbm", "sqrt_weight", LIGHTGBM_PARAMS),
     Experiment("xgboost_class_weight", "xgboost", "class_weight", XGBOOST_PARAMS),
 ]
 EXPERIMENTS_BY_NAME = {e.name: e for e in EXPERIMENTS}
@@ -139,6 +143,20 @@ def undersample(train_df: pd.DataFrame, ratio: int, seed: int) -> pd.DataFrame:
     keep = min(len(normal), ratio * len(fraud))
     sampled = normal.sample(n=keep, random_state=seed)
     return pd.concat([fraud, sampled]).sort_index()
+
+
+def boosting_weight(imbalance: str, pos_weight: float) -> float:
+    """ค่า scale_pos_weight ของโมเดล boosting ตามกลยุทธ์
+
+    - class_weight : จำนวนรายการปกติ / จำนวน fraud (~580 ในข้อมูลจริง) ถ่วงเต็มที่
+    - sqrt_weight  : รากที่สองของค่าข้างบน (~24) ถ่วงแบบนุ่มลง กันคะแนนอิ่มตัวจน PR-AUC พัง
+    - อื่น ๆ        : 1.0 ไม่ถ่วง ปล่อยให้การเลือก threshold จากต้นทุนจัดการความไม่สมดุลแทน
+    """
+    if imbalance == "class_weight":
+        return pos_weight
+    if imbalance == "sqrt_weight":
+        return float(np.sqrt(pos_weight))
+    return 1.0
 
 
 def build_estimator(exp: Experiment, seed: int, pos_weight: float):
@@ -162,7 +180,7 @@ def build_estimator(exp: Experiment, seed: int, pos_weight: float):
 
         params = {
             **exp.params,
-            "scale_pos_weight": pos_weight if weighted else 1.0,
+            "scale_pos_weight": boosting_weight(exp.imbalance, pos_weight),
             "random_state": seed,
             "n_jobs": -1,
             "verbose": -1,
@@ -174,7 +192,7 @@ def build_estimator(exp: Experiment, seed: int, pos_weight: float):
 
         params = {
             **exp.params,
-            "scale_pos_weight": pos_weight if weighted else 1.0,
+            "scale_pos_weight": boosting_weight(exp.imbalance, pos_weight),
             "tree_method": "hist",
             "eval_metric": "aucpr",
             "random_state": seed,
@@ -352,7 +370,9 @@ def log_run(result: dict, model, X_example: pd.DataFrame) -> str:
         # 4) ตัวชี้วัด (ข้ามค่า NaN เช่น ROC-AUC ของชุดที่ไม่มี fraud)
         mlflow.log_metrics({k: float(v) for k, v in result["metrics"].items() if np.isfinite(v)})
         # 5) ไฟล์ผลลัพธ์: โมเดล (พร้อม requirements ของสภาพแวดล้อมที่ MLflow สร้างให้) + สรุปผล
-        mlflow.sklearn.log_model(model, artifact_path="model", input_example=X_example.head(3))
+        # แปลงเป็น float ก่อน เพราะ Time ในไฟล์ดิบเป็นจำนวนเต็ม MLflow จะเตือนเรื่อง schema ของคอลัมน์ int
+        example = X_example.head(3).astype(float)
+        mlflow.sklearn.log_model(model, artifact_path="model", input_example=example)
         mlflow.log_dict(_jsonable(result), "result.json")
         for extra in (ROOT / "requirements.txt", ROOT / p["data"]["processed_dir"] / "data_version.json"):
             if extra.exists():
