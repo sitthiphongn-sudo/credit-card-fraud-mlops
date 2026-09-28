@@ -209,9 +209,9 @@ def test_joblib_roundtrip_gives_identical_predictions_end_to_end(train_df, test_
     """ทดสอบระดับ pipeline เต็มรูปแบบ (transformer + โมเดล) ให้ใกล้เคียงของจริง
     ที่สุด: เทรน -> บันทึกด้วย joblib -> โหลดกลับมา -> ทำนาย ต้องได้ค่าเดิมเป๊ะ
     """
+    import joblib
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
-    import joblib
 
     X_train = train_df.drop(columns=["Class"])
     y_train = train_df["Class"]
