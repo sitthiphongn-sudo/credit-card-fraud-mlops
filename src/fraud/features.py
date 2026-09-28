@@ -66,6 +66,18 @@ def _validate_columns(df: pd.DataFrame) -> None:
             "ข้อมูลขาดคอลัมน์ที่จำเป็นสำหรับแปลงฟีเจอร์: "
             f"{missing} (ต้องมีอย่างน้อย {REQUIRED_RAW_COLUMNS})"
         )
+
+    # ตรวจค่าที่หายไป (NaN / None) ก่อนตรวจอย่างอื่น เพื่อให้ได้ ValueError ที่บอก
+    # ชัดว่าคอลัมน์ไหนหายกี่แถว ไม่ปล่อยให้ NaN ไหลไปเป็นฟีเจอร์แล้วโมเดลพังทีหลัง
+    null_counts = df[REQUIRED_RAW_COLUMNS].isna().sum()
+    null_counts = null_counts[null_counts > 0]
+    if not null_counts.empty:
+        detail = ", ".join(f"{col} ({n} แถว)" for col, n in null_counts.items())
+        raise ValueError(
+            f"พบค่าที่หายไป (NaN/None) ในคอลัมน์: {detail} — ระบบไม่เติมค่าให้เอง "
+            "เพราะอาจซ่อนปัญหาของข้อมูลต้นทาง ต้องแก้ที่ข้อมูลก่อนแล้วส่งมาใหม่"
+        )
+
     if (df["Amount"] < 0).any():
         raise ValueError(
             "พบ Amount ติดลบ — log1p ใช้กับค่าติดลบไม่ได้ตามหลักสถิติ "
