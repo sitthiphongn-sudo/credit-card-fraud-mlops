@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from fraud.gate import (
+    load_champion_metrics,
     model_size_mb,
     passes_gate,
     promote_to_champion,
@@ -182,3 +183,43 @@ def test_model_size_mb_sums_all_artifact_files(
     size = model_size_mb("run-123")
 
     assert size == pytest.approx(3072 / (1024 * 1024))
+
+def test_load_champion_metrics_returns_none_without_alias(monkeypatch):
+    class FakeClient:
+        def get_registered_model(self, name):
+            assert name == "fraud-detector"
+            return SimpleNamespace(aliases={"challenger": "7"})
+
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    assert load_champion_metrics() is None
+
+
+def test_load_champion_metrics_reads_test_pr_auc(monkeypatch):
+    class FakeClient:
+        def get_registered_model(self, name):
+            assert name == "fraud-detector"
+            return SimpleNamespace(aliases={"champion": "4"})
+
+        def get_model_version(self, name, version):
+            assert name == "fraud-detector"
+            assert version == "4"
+            return SimpleNamespace(run_id="champion-run")
+
+        def get_run(self, run_id):
+            assert run_id == "champion-run"
+            return SimpleNamespace(
+                data=SimpleNamespace(
+                    metrics={"test_pr_auc": 0.82},
+                ),
+            )
+
+    monkeypatch.setattr(
+        "fraud.gate.MlflowClient",
+        lambda: FakeClient(),
+    )
+
+    assert load_champion_metrics() == {"pr_auc": 0.82}

@@ -47,6 +47,11 @@ def test_approved_candidate_becomes_champion(monkeypatch):
     promoted = []
 
     monkeypatch.setattr(
+        "pipelines.flow.load_champion_metrics",
+        lambda: None,
+    )
+
+    monkeypatch.setattr(
         "pipelines.flow.promote_to_champion",
         promoted.append,
     )
@@ -63,6 +68,11 @@ def test_approved_candidate_becomes_champion(monkeypatch):
 
 def test_failed_candidate_keeps_current_champion(monkeypatch):
     promoted = []
+
+    monkeypatch.setattr(
+        "pipelines.flow.load_champion_metrics",
+        lambda: None,
+    )
 
     monkeypatch.setattr(
         "pipelines.flow.promote_to_champion",
@@ -166,3 +176,24 @@ def test_add_model_size_keeps_logged_size(monkeypatch):
     )
 
     assert result == {"model_mb": 1.5}
+
+def test_candidate_is_compared_with_loaded_champion(monkeypatch):
+    promoted = []
+
+    monkeypatch.setattr(
+        "pipelines.flow.load_champion_metrics",
+        lambda: {"pr_auc": 0.90},
+    )
+    monkeypatch.setattr(
+        "pipelines.flow.promote_to_champion",
+        promoted.append,
+    )
+
+    with pytest.raises(RuntimeError, match="pr_auc"):
+        promote_if_approved.fn(
+            version="7",
+            candidate_metrics=good_metrics(pr_auc=0.80),
+            champion_metrics=None,
+        )
+
+    assert promoted == []

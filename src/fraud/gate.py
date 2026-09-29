@@ -61,6 +61,35 @@ def model_size_mb(run_id: str) -> float:
 
     return total_bytes / (1024 * 1024)
 
+def load_champion_metrics() -> dict | None:
+    """อ่าน test metrics ของ champion ปัจจุบันจาก MLflow Registry."""
+    registry = load_params()["registry"]
+    model_name = registry["model_name"]
+    champion_alias = registry["champion_alias"]
+
+    client = MlflowClient()
+    registered_model = client.get_registered_model(model_name)
+    champion_version = registered_model.aliases.get(champion_alias)
+
+    if champion_version is None:
+        return None
+
+    model_version = client.get_model_version(
+        model_name,
+        str(champion_version),
+    )
+    run = client.get_run(model_version.run_id)
+    metrics = run.data.metrics
+
+    if "test_pr_auc" not in metrics:
+        raise RuntimeError(
+            "champion MLflow run is missing test_pr_auc"
+        )
+
+    return {
+        "pr_auc": float(metrics["test_pr_auc"]),
+    }
+
 def register_challenger(run_id: str, metrics: dict) -> str:
     """ลงทะเบียนโมเดลจาก MLflow run และตั้ง alias เป็น challenger."""
     registry = load_params()["registry"]

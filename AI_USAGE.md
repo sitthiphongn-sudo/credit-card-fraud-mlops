@@ -20,3 +20,4 @@
 | 2026-09-16 | ใหญ่ | Claude | ออกแบบโค้ด | ทั้ง repo |
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยแก้ Pipeline ให้ตรวจข้อมูลดิบด้วย `validate_raw` และเพิ่ม unit test ยืนยันการเรียกใช้ | `pipelines/flow.py`, `tests/test_flow.py` |
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเชื่อม XGBoost experiment และแปลง test metrics จากงานโมเดลเข้าสู่ Model Gate พร้อม unit tests | `pipelines/flow.py`, `tests/test_flow.py` |
+| 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเพิ่มการโหลด metrics ของ champion จาก MLflow เพื่อเปรียบเทียบกับ candidate ก่อนเลื่อน alias พร้อม unit tests | `src/fraud/gate.py`, `pipelines/flow.py`, `tests/test_gate.py`, `tests/test_flow.py` |

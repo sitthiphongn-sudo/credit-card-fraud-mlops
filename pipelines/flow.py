@@ -8,6 +8,7 @@ from prefect import flow, task
 from fraud.config import ROOT, load_params
 from fraud.data import file_hash, load_raw, time_split
 from fraud.gate import (
+    load_champion_metrics,
     model_size_mb,
     passes_gate,
     promote_to_champion,
@@ -89,9 +90,14 @@ def promote_if_approved(
     champion_metrics: dict | None = None,
 ) -> str:
     """ตรวจ gate และเลื่อนเป็น champion เฉพาะเมื่อผ่าน."""
+    current_champion = champion_metrics
+
+    if current_champion is None:
+        current_champion = load_champion_metrics()
+
     passed, reasons = passes_gate(
         candidate_metrics,
-        champion_metrics,
+        current_champion,
     )
 
     if not passed:
