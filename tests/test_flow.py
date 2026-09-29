@@ -2,6 +2,7 @@ import pytest
 
 from pipelines.flow import (
     add_model_size,
+    check,
     promote_if_approved,
     register_candidate,
 )
@@ -96,3 +97,13 @@ def test_add_model_size_preserves_input_metrics(monkeypatch):
         "model_mb": 12.5,
     }
     assert "model_mb" not in original
+
+def test_check_uses_raw_validation(monkeypatch):
+    expected = object()
+
+    monkeypatch.setattr(
+        "pipelines.flow.validate_raw",
+        lambda df: expected,
+    )
+
+    assert check.fn(object()) is expected

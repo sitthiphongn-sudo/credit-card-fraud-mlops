@@ -14,7 +14,7 @@ from fraud.gate import (
     register_challenger,
 )
 from fraud.train import train_baseline
-from fraud.validate import validate
+from fraud.validate import validate_raw
 
 
 @task
@@ -26,8 +26,7 @@ def ingest():
 
 @task
 def check(df):
-    return validate(df)  # ข้อมูลเสีย → raise → flow หยุด
-
+    return validate_raw(df)
 
 @task
 def split(df):

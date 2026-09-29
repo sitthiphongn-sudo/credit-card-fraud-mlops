@@ -18,3 +18,4 @@
 | 2026-09-28 | ธรรมรักษ์ | Codex | แนะนำการคำนวณขนาด MLflow model artifact และเชื่อม `model_mb` เข้า release flow พร้อม unit tests | `src/fraud/gate.py`, `pipelines/flow.py`, `tests/test_gate.py`, `tests/test_flow.py`, `docs/model_release.md` |
 | 2026-09-28 | ธรรมรักษ์ | Codex | ช่วยร่างแผนภาพสถาปัตยกรรม MLOps และขอบเขตการเชื่อมงานของสมาชิก | `docs/architecture.md` |
 | 2026-09-16 | ใหญ่ | Claude | ออกแบบโค้ด | ทั้ง repo |
+| 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยแก้ Pipeline ให้ตรวจข้อมูลดิบด้วย `validate_raw` และเพิ่ม unit test ยืนยันการเรียกใช้ | `pipelines/flow.py`, `tests/test_flow.py` |
