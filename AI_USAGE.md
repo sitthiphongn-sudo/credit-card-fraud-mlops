@@ -17,3 +17,4 @@
 | 2026-09-28 | ธรรมรักษ์ | Codex | แนะนำ unit test สำหรับตรวจว่า rollback ย้าย alias champion ไปยัง version ที่ระบุ | `tests/test_gate.py` |
 | 2026-09-28 | ธรรมรักษ์ | Codex | แนะนำการคำนวณขนาด MLflow model artifact และเชื่อม `model_mb` เข้า release flow พร้อม unit tests | `src/fraud/gate.py`, `pipelines/flow.py`, `tests/test_gate.py`, `tests/test_flow.py`, `docs/model_release.md` |
 | 2026-09-28 | ธรรมรักษ์ | Codex | ช่วยร่างแผนภาพสถาปัตยกรรม MLOps และขอบเขตการเชื่อมงานของสมาชิก | `docs/architecture.md` |
+| 2026-09-16 | ใหญ่ | Claude | ออกแบบโค้ด | ทั้ง repo |
