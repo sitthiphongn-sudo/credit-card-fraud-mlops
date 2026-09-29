@@ -1,10 +1,3 @@
-"""บริการทำนายแบบ real-time + cascade — ผู้รับผิดชอบ: สหรัฐ
-
-/predict  validate → hard rules → pipeline (transform + model) → approve / review / decline
-/health   สถานะและเวอร์ชันโมเดล
-/metrics  สำหรับ Prometheus
-TODO(สหรัฐ): โหลดจาก MLflow Registry (models:/fraud-detector@champion), เพิ่ม hard rules, threshold จาก gate
-"""
 import os
 import time
 
@@ -14,7 +7,8 @@ from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel
 
-from fraud.validate import FEATURES, validate
+# เปลี่ยนมาใช้การ import ตามโครงสร้างเดิมของโปรเจกต์
+from src.fraud.validate import FEATURES, validate
 
 MODEL_URI = os.getenv("MODEL_URI", "models:/fraud-detector@champion")
 REQUESTS = Counter("fraud_requests_total", "requests", ["status"])
@@ -25,10 +19,8 @@ LATENCY = Histogram("fraud_request_latency_seconds", "latency",
 app = FastAPI(title="Fraud Detection API")
 model = None
 
-
 class Txn(BaseModel):
     instances: list[dict]
-
 
 @app.on_event("startup")
 def load_model():
@@ -39,16 +31,13 @@ def load_model():
     except Exception as exc:  # ยังไม่มีโมเดลในทะเบียน
         print(f"model not loaded: {exc}")
 
-
 @app.get("/health")
 def health():
     return {"status": "ok" if model is not None else "degraded", "model_uri": MODEL_URI}
 
-
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
 
 @app.post("/predict")
 def predict(req: Txn):
@@ -56,13 +45,40 @@ def predict(req: Txn):
     try:
         if model is None:
             raise HTTPException(503, "model not loaded")
+            
+        # 1. Validate โครงสร้างข้อมูลตามฟังก์ชันเดิมของทีม
         df = validate(pd.DataFrame(req.instances), with_target=False)[FEATURES]
-        proba = model.predict_proba(df)[:, 1]
-        decisions = ["decline" if p >= 0.8 else "review" if p >= 0.3 else "approve" for p in proba]
-        for d in decisions:
-            DECISIONS.labels(d).inc()
+        
+        decisions = []
+        probabilities = []
+        
+        # 2. เริ่มทำงานแบบ Cascade
+        for i, row in df.iterrows():
+            # กฎ Hard Rules (ถ้า Amount > 3000 ให้ปฏิเสธทันที)
+            if "Amount" in row and row["Amount"] > 3000:
+                decisions.append("decline")
+                probabilities.append(1.0)
+                DECISIONS.labels("decline").inc()
+                continue
+                
+            # 3. ถ้าผ่าน Hard rules ค่อยให้โมเดลทำนาย
+            row_df = pd.DataFrame([row])
+            p = float(model.predict_proba(row_df)[:, 1][0])
+            probabilities.append(round(p, 4))
+            
+            if p >= 0.97:
+                decision = "decline"
+            elif p >= 0.80:
+                decision = "review"
+            else:
+                decision = "approve"
+                
+            decisions.append(decision)
+            DECISIONS.labels(decision).inc()
+
         REQUESTS.labels("200").inc()
-        return {"probabilities": [round(float(p), 4) for p in proba], "decisions": decisions}
+        return {"probabilities": probabilities, "decisions": decisions}
+        
     except HTTPException:
         REQUESTS.labels("503").inc()
         raise
