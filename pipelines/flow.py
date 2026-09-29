@@ -13,7 +13,7 @@ from fraud.gate import (
     promote_to_champion,
     register_challenger,
 )
-from fraud.train import train_baseline
+from fraud.train import EXPERIMENTS_BY_NAME, run_experiment
 from fraud.validate import validate_raw
 
 
@@ -34,17 +34,46 @@ def split(df):
 
 
 @task
-def train(train_df, val_df, data_version):
-    return train_baseline(train_df, val_df, data_version)
+@task
+def train(
+    train_df,
+    val_df,
+    test_df,
+    data_version,
+) -> tuple[str, dict]:
+    result, _ = run_experiment(
+        exp=EXPERIMENTS_BY_NAME["xgboost_class_weight"],
+        train_df=train_df,
+        val_df=val_df,
+        test_df=test_df,
+        data_version=data_version,
+    )
+
+    run_id = result["run_id"]
+    if not run_id:
+        raise RuntimeError("training did not create an MLflow run")
+
+    metrics = result["metrics"]
+    candidate_metrics = {
+        "recall": metrics["test_recall"],
+        "pr_auc": metrics["test_pr_auc"],
+        "p95_ms": metrics["latency_p95_ms"],
+        "model_mb": metrics["model_mb"],
+    }
+
+    return run_id, candidate_metrics
 
 @task
 def add_model_size(
     run_id: str,
     candidate_metrics: dict,
 ) -> dict:
-    """เพิ่มขนาด model artifact ลงใน candidate metrics."""
+    """เติมขนาด artifact เมื่อผลจากการเทรนยังไม่มี model_mb."""
     complete_metrics = dict(candidate_metrics)
-    complete_metrics["model_mb"] = model_size_mb(run_id)
+
+    if "model_mb" not in complete_metrics:
+        complete_metrics["model_mb"] = model_size_mb(run_id)
+
     return complete_metrics
 
 @task
@@ -99,7 +128,18 @@ def training_pipeline():
     df, version = ingest()
     df = check(df)
     tr, va, te = split(df)
-    return train(tr, va, version)
+
+    run_id, candidate_metrics = train(
+        tr,
+        va,
+        te,
+        version,
+    )
+
+    return release_pipeline(
+        run_id,
+        candidate_metrics,
+    )
 
 
 if __name__ == "__main__":

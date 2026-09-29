@@ -19,3 +19,4 @@
 | 2026-09-28 | ธรรมรักษ์ | Codex | ช่วยร่างแผนภาพสถาปัตยกรรม MLOps และขอบเขตการเชื่อมงานของสมาชิก | `docs/architecture.md` |
 | 2026-09-16 | ใหญ่ | Claude | ออกแบบโค้ด | ทั้ง repo |
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยแก้ Pipeline ให้ตรวจข้อมูลดิบด้วย `validate_raw` และเพิ่ม unit test ยืนยันการเรียกใช้ | `pipelines/flow.py`, `tests/test_flow.py` |
+| 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเชื่อม XGBoost experiment และแปลง test metrics จากงานโมเดลเข้าสู่ Model Gate พร้อม unit tests | `pipelines/flow.py`, `tests/test_flow.py` |
