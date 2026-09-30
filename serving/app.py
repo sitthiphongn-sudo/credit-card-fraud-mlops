@@ -1,73 +1,60 @@
-"""บริการทำนายแบบ real-time + cascade — ผู้รับผิดชอบ: สหรัฐ
-
-/predict  validate → hard rules → pipeline (transform + model) → approve / review / decline
-/health   สถานะและเวอร์ชันโมเดล
-/metrics  สำหรับ Prometheus
-TODO(สหรัฐ): โหลดจาก MLflow Registry (models:/fraud-detector@champion), เพิ่ม hard rules, threshold จาก gate
-"""
 import os
-import time
+from contextlib import asynccontextmanager
 
+import mlflow
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from fraud.validate import FEATURES, validate
-
-MODEL_URI = os.getenv("MODEL_URI", "models:/fraud-detector@champion")
-REQUESTS = Counter("fraud_requests_total", "requests", ["status"])
-DECISIONS = Counter("fraud_decisions_total", "decisions", ["decision"])
-LATENCY = Histogram("fraud_request_latency_seconds", "latency",
-                    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0))
-
-app = FastAPI(title="Fraud Detection API")
+LOCAL_MODEL_DIR = "./models_cache/champion_model"
 model = None
 
-
-class Txn(BaseModel):
-    instances: list[dict]
-
-
-@app.on_event("startup")
-def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global model
-    try:
-        import mlflow
-        model = mlflow.sklearn.load_model(MODEL_URI)
-    except Exception as exc:  # ยังไม่มีโมเดลในทะเบียน
-        print(f"model not loaded: {exc}")
+    if not os.path.exists(LOCAL_MODEL_DIR):
+        mlflow.artifacts.download_artifacts(
+            artifact_uri="models:/fraud-detector@champion",
+            dst_path=LOCAL_MODEL_DIR
+        )
+    model = mlflow.pyfunc.load_model(LOCAL_MODEL_DIR)
+    yield
 
+# สร้าง App เพียวๆ โดยไม่มี Middleware มารั้งความเร็ว
+app = FastAPI(title="Credit Card Fraud Detection API", lifespan=lifespan)
 
-@app.get("/health")
-def health():
-    return {"status": "ok" if model is not None else "degraded", "model_uri": MODEL_URI}
+FEATURE_COLUMNS = [
+    "Time", "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
+    "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19", "V20",
+    "V21", "V22", "V23", "V24", "V25", "V26", "V27", "V28", "Amount"
+]
 
-
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
+class TransactionData(BaseModel):
+    features: list[float] = Field(..., description="List of 30 numerical features")
 
 @app.post("/predict")
-def predict(req: Txn):
-    start = time.perf_counter()
+def predict(data: TransactionData):  # ใช้ def ธรรมดา เพื่อกระจายงานลง ThreadPool
+    if model is None:
+        raise HTTPException(status_code=500, detail="Model is not loaded")
+    
+    if len(data.features) != 30:
+        raise HTTPException(status_code=400, detail="Expected 30 features.")
+
     try:
-        if model is None:
-            raise HTTPException(503, "model not loaded")
-        df = validate(pd.DataFrame(req.instances), with_target=False)[FEATURES]
-        proba = model.predict_proba(df)[:, 1]
-        decisions = ["decline" if p >= 0.8 else "review" if p >= 0.3 else "approve" for p in proba]
-        for d in decisions:
-            DECISIONS.labels(d).inc()
-        REQUESTS.labels("200").inc()
-        return {"probabilities": [round(float(p), 4) for p in proba], "decisions": decisions}
-    except HTTPException:
-        REQUESTS.labels("503").inc()
-        raise
-    except Exception as exc:
-        REQUESTS.labels("400").inc()
-        raise HTTPException(400, str(exc)) from exc
-    finally:
-        LATENCY.observe(time.perf_counter() - start)
+        # สร้าง DataFrame ด้วยวิธีที่เร็วที่สุด
+        input_df = pd.DataFrame([data.features], columns=FEATURE_COLUMNS)
+        
+        prediction = model.predict(input_df)
+        
+        raw_val = prediction[0] if isinstance(prediction, (np.ndarray, list, pd.Series)) else prediction
+        is_fraud_res = int(raw_val.item()) if hasattr(raw_val, 'item') else int(raw_val)
+            
+        return {"is_fraud": is_fraud_res, "status": "success"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}") from e
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "model_loaded": model is not None}
