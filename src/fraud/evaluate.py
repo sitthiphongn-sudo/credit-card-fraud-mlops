@@ -9,10 +9,12 @@
     - Recall ที่ Precision >= 0.80  : จับ fraud ได้กี่ % เมื่อยอมให้แจ้งเตือนผิดไม่เกิน 20%
     - ต้นทุนทางธุรกิจ              : FN เสียเท่ากับยอดเงินของรายการที่หลุด (Amount)
                                      FP เสียค่าตรวจสอบคงที่ต่อรายการ (configs/params.yaml)
+                                     ทั้งสองค่าต้องเป็นสกุลเงินเดียวกัน (ยูโร ตามหน่วยของ Amount)
     - ช่วงความเชื่อมั่นแบบ bootstrap : ชุดทดสอบมี fraud ไม่ถึงร้อยรายการ ตัวเลขเดี่ยวจึงแกว่งง่าย
 
 กติกาสำคัญ: เลือก threshold จากชุด validation เท่านั้น แล้วค่อยนำ threshold นั้นไปวัดผลบนชุด test
 ถ้าเลือก threshold บน test จะได้ผลดีเกินจริง (เท่ากับแอบดูข้อสอบ)
+threshold ที่เลือกคือจุดที่ต้นทุนต่ำสุด ภายใต้เงื่อนไข precision บน validation ≥ 0.80 (ดู best_cost_threshold)
 """
 
 from __future__ import annotations
@@ -73,18 +75,43 @@ def candidate_thresholds(proba, n_quantiles: int = 1000) -> np.ndarray:
     return np.unique(np.concatenate([DEFAULT_THRESHOLDS, quantiles]))
 
 
-def best_cost_threshold(y, proba, amount, review_fee: float, thresholds=None) -> tuple[float, float]:
+def best_cost_threshold(
+    y,
+    proba,
+    amount,
+    review_fee: float,
+    thresholds=None,
+    min_precision: float | None = None,
+) -> tuple[float, float]:
     """ไล่ threshold ทีละค่า แล้วเลือกค่าที่ต้นทุนรวมต่ำสุด คืนค่า (threshold, ต้นทุนรวม)
 
     ถ้าไม่ระบุ ``thresholds`` จะใช้ :func:`candidate_thresholds` (เรียงจากน้อยไปมาก)
     ถ้าต้นทุนเท่ากันหลายค่า จะเลือก threshold ที่ต่ำที่สุด (ค่าแรกที่เจอ) เพื่อให้จับ fraud ได้มากไว้ก่อน
+
+    ``min_precision`` คือข้อจำกัดภาระงานของทีมตรวจ: พิจารณาเฉพาะ threshold ที่ precision ไม่ต่ำกว่าค่านี้
+    เหตุผล: ค่าตรวจสอบต่อรายการถูกมากเมื่อเทียบกับยอดเงินที่โดนโกง ถ้าดูแค่ต้นทุน threshold จะดิ่งเกือบศูนย์
+    และแจ้งเตือนผิดเกือบทุกรายการ ซึ่งทีมตรวจรับไม่ไหวและลูกค้าโดนระงับบัตรผิดจำนวนมาก
+    ถ้าไม่มี threshold ใดถึงเกณฑ์ (เช่น baseline แบบกฎ) จะคืน threshold ที่ precision สูงสุดแทน
+    เพื่อให้ pipeline ทำงานต่อได้ โมเดลแบบนั้นจะไม่ผ่าน gate อยู่แล้ว
     """
     candidates = candidate_thresholds(proba) if thresholds is None else np.asarray(thresholds, dtype=float)
     best = (0.5, np.inf)
+    fallback = (0.5, np.inf, -1.0)  # (threshold, ต้นทุน, precision) ของจุดที่ precision สูงสุด
     for t in candidates:
-        cost = cost_at_threshold(y, proba, amount, review_fee, float(t))["total_cost"]
+        t = float(t)
+        cost = cost_at_threshold(y, proba, amount, review_fee, t)["total_cost"]
+        if min_precision is not None:
+            c = confusion_at_threshold(y, proba, t)
+            flagged = c["tp"] + c["fp"]
+            precision = c["tp"] / flagged if flagged else 0.0
+            if (precision, -cost) > (fallback[2], -fallback[1]):
+                fallback = (t, cost, precision)
+            if precision < min_precision:
+                continue
         if cost < best[1]:
-            best = (float(t), float(cost))
+            best = (t, float(cost))
+    if min_precision is not None and np.isinf(best[1]):
+        return fallback[0], float(fallback[1])
     return best
 
 

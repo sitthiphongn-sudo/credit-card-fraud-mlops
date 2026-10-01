@@ -51,6 +51,22 @@ def test_best_cost_threshold_prefers_catching_expensive_fraud():
     assert 0.40 < threshold <= 0.60
 
 
+def test_min_precision_rules_out_cheap_but_noisy_thresholds():
+    """ถ้าดูแค่ต้นทุน จะได้ threshold 0.41–0.60 (ต้นทุน 50) แต่ precision แค่ 2/3
+    บังคับ precision >= 0.8 → ต้องขยับขึ้นไปช่วง 0.71–0.95 จับได้แค่รายการ 1000 ยอมให้ 500 หลุด"""
+    threshold, cost = best_cost_threshold(Y, PROBA, AMOUNT, FEE, min_precision=0.8)
+    assert cost == 500.0
+    assert 0.70 < threshold <= 0.95
+
+
+def test_min_precision_falls_back_to_most_precise_threshold_when_unreachable():
+    """fraud ได้คะแนนต่ำกว่ารายการปกติทุกตัว precision สูงสุดที่ทำได้คือ 1/3 (แจ้งทุกรายการ) ต้องไม่ล่ม"""
+    y, proba, amount = [1, 0, 0], [0.2, 0.5, 0.9], [100.0, 1.0, 1.0]
+    threshold, cost = best_cost_threshold(y, proba, amount, 50.0, min_precision=0.8)
+    assert threshold <= 0.2
+    assert cost == 100.0
+
+
 def test_best_cost_threshold_accepts_custom_candidates():
     threshold, cost = best_cost_threshold(Y, PROBA, AMOUNT, FEE, thresholds=[0.5, 0.8])
     assert (threshold, cost) == (0.5, 50.0)

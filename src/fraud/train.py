@@ -8,6 +8,7 @@
     1. จัดการข้อมูลไม่สมดุลเฉพาะ "ชุดฝึก" ตามกลยุทธ์ของการทดลองนั้น (none / class_weight / undersample)
     2. เทรนบนชุดฝึก
     3. เลือก threshold ที่ต้นทุนต่ำสุดจาก "ชุด validation" (ห้ามเลือกบนชุด test)
+       โดย precision บน validation ต้องไม่ต่ำกว่า cost.min_alert_precision (ภาระงานทีมตรวจ)
     4. วัดผลบนชุด test ด้วย threshold นั้น + ช่วงความเชื่อมั่นของ PR-AUC แบบ bootstrap
     5. วัดเวลาทำนายทีละรายการ (p50 / p95) และขนาดไฟล์โมเดล เพื่อเทียบกับเกณฑ์ gate
     6. บันทึกลง MLflow ครบ 6 อย่าง: เวอร์ชันโค้ด (git sha), เวอร์ชันข้อมูล (hash),
@@ -106,6 +107,9 @@ LIGHTGBM_PARAMS = {
     "subsample": 0.8,
     "subsample_freq": 1,
     "colsample_bytree": 0.8,
+    # สองค่านี้คือการแก้ LightGBM ที่พัง (ดูคำอธิบายที่ EXPERIMENTS ด้านล่าง)
+    "min_child_weight": 1.0,  # ค่าเริ่มต้นของ LightGBM คือ 0.001 ต่ำเกินไปสำหรับข้อมูลที่ fraud มี 0.2%
+    "reg_lambda": 1.0,  # L2 ช่วยหดค่าของใบให้ไม่สุดโต่ง
 }
 XGBOOST_PARAMS = {
     "n_estimators": 400,
@@ -123,8 +127,11 @@ EXPERIMENTS = [
     Experiment("logreg_undersample", "logreg", "undersample", LOGREG_PARAMS),
     # โมเดลต้นไม้แบบ boosting ถ่วงน้ำหนักคลาสด้วย scale_pos_weight
     Experiment("lightgbm_class_weight", "lightgbm", "class_weight", LIGHTGBM_PARAMS),
-    # ข้อมูลจริง (28 ก.ย.): lightgbm_class_weight ได้ val PR-AUC 0.0069 เพราะ scale_pos_weight ~580
-    # แรงเกินจนคะแนนอิ่มตัว จึงเพิ่มสองแบบนี้เพื่อหาน้ำหนักที่เหมาะ
+    # ประวัติ: รอบแรก (28 ก.ย.) LightGBM ทุกแบบพัง val PR-AUC 0.007–0.08 แม้ไม่ถ่วงน้ำหนัก
+    # สาเหตุ: min_child_weight เริ่มต้นของ LightGBM = 0.001 ทำให้มีใบที่ผลรวม hessian เกือบศูนย์
+    # ค่าของใบ = ผลรวม gradient / ผลรวม hessian จึงพุ่งเป็นหลักหมื่น (|raw score| สูงสุด ~35,000)
+    # โมเดลลู่ออกตั้งแต่ตอนเทรน (train PR-AUC แค่ 0.33) ไม่ใช่ overfit
+    # แก้ด้วย min_child_weight=1 (เท่ากับค่าเริ่มต้นของ XGBoost) + L2 → val PR-AUC 0.787
     Experiment("lightgbm_none", "lightgbm", "none", LIGHTGBM_PARAMS),
     Experiment("lightgbm_sqrt_weight", "lightgbm", "sqrt_weight", LIGHTGBM_PARAMS),
     Experiment("xgboost_class_weight", "xgboost", "class_weight", XGBOOST_PARAMS),
@@ -148,8 +155,8 @@ def undersample(train_df: pd.DataFrame, ratio: int, seed: int) -> pd.DataFrame:
 def boosting_weight(imbalance: str, pos_weight: float) -> float:
     """ค่า scale_pos_weight ของโมเดล boosting ตามกลยุทธ์
 
-    - class_weight : จำนวนรายการปกติ / จำนวน fraud (~580 ในข้อมูลจริง) ถ่วงเต็มที่
-    - sqrt_weight  : รากที่สองของค่าข้างบน (~24) ถ่วงแบบนุ่มลง กันคะแนนอิ่มตัวจน PR-AUC พัง
+    - class_weight : จำนวนรายการปกติ / จำนวน fraud (~497 ในชุดฝึกจริง) ถ่วงเต็มที่
+    - sqrt_weight  : รากที่สองของค่าข้างบน (~22) ถ่วงแบบนุ่มลง กันคะแนนอิ่มตัวจน PR-AUC พัง
     - อื่น ๆ        : 1.0 ไม่ถ่วง ปล่อยให้การเลือก threshold จากต้นทุนจัดการความไม่สมดุลแทน
     """
     if imbalance == "class_weight":
@@ -206,6 +213,16 @@ def build_estimator(exp: Experiment, seed: int, pos_weight: float):
 # ---------------------------------------------------------------------------
 # การวัดผลที่ไม่ใช่ความแม่น: เวลาและขนาด (ใช้เทียบกับเกณฑ์ gate ใน configs/params.yaml)
 # ---------------------------------------------------------------------------
+
+
+def review_fee_eur(cost: dict) -> float:
+    """ค่าตรวจสอบต่อรายการในหน่วยยูโร ให้หน่วยตรงกับ Amount ของชุดข้อมูล ULB
+
+    สมมติฐานค่าตรวจสอบตั้งไว้เป็นบาทใน configs/params.yaml จึงต้องหารด้วยอัตราแลกเปลี่ยนก่อน
+    ถ้าไม่แปลง จะเอาบาทไปบวกกับยูโรตรง ๆ ทำให้ต้นทุน false positive แพงเกินจริงราว 38 เท่า
+    และ threshold ที่ได้จะสูงเกินไป (แจ้งเตือนน้อยเกินไป)
+    """
+    return cost["review_fee_thb"] / cost["eur_to_thb"]
 
 
 def measure_latency(model, X: pd.DataFrame, n: int = LATENCY_SAMPLES) -> tuple[float, float]:
@@ -269,7 +286,7 @@ def run_experiment(
     """เทรนและประเมินหนึ่งการทดลอง คืน (ผลลัพธ์แบบ dict, โมเดลที่เทรนแล้ว)"""
     p = load_params()
     seed = p["seed"]
-    fee = p["cost"]["review_fee_thb"]
+    fee = review_fee_eur(p["cost"])  # ยูโร หน่วยเดียวกับ Amount
 
     fit_df = undersample(train_df, UNDERSAMPLE_RATIO, seed) if exp.imbalance == "undersample" else train_df
     X_fit, y_fit = split_xy(fit_df)
@@ -286,7 +303,8 @@ def run_experiment(
     # เลือก threshold จาก validation เท่านั้น
     X_val, y_val = split_xy(val_df)
     val_proba = model.predict_proba(X_val)[:, 1]
-    threshold, _ = best_cost_threshold(y_val, val_proba, X_val["Amount"], fee)
+    min_precision = p["cost"]["min_alert_precision"]
+    threshold, _ = best_cost_threshold(y_val, val_proba, X_val["Amount"], fee, min_precision=min_precision)
     val_metrics = evaluate_scores(y_val, val_proba, X_val["Amount"], threshold, fee)
     metrics = {f"val_{k}": v for k, v in val_metrics.items()}
 
@@ -318,6 +336,9 @@ def run_experiment(
         "train_rows": len(fit_df),
         "train_fraud": n_fraud,
         "data_version": data_version,
+        "review_fee_eur": fee,
+        "eur_to_thb": p["cost"]["eur_to_thb"],
+        "min_alert_precision": min_precision,
         "metrics": metrics,
         "run_id": None,
     }
@@ -362,7 +383,11 @@ def log_run(result: dict, model, X_example: pd.DataFrame) -> str:
                 "imbalance": result["imbalance"],
                 "threshold": result["threshold"],
                 "seed": p["seed"],
+                "currency": p["cost"]["currency"],
                 "review_fee_thb": p["cost"]["review_fee_thb"],
+                "review_fee_eur": result["review_fee_eur"],
+                "eur_to_thb": result["eur_to_thb"],
+                "min_alert_precision": result["min_alert_precision"],
                 "train_rows": result["train_rows"],
                 "train_fraud": result["train_fraud"],
             }
@@ -440,7 +465,8 @@ REPORT_COLUMNS = [
     ("threshold", "threshold"),
     ("test_precision", "test Precision"),
     ("test_recall", "test Recall"),
-    ("test_savings", "เงินที่ประหยัดได้ (test)"),
+    ("test_savings", "ประหยัดได้ test (EUR)"),
+    ("test_savings_thb", "ประหยัดได้ test (บาท)"),
     ("latency_p95_ms", "p95 (ms)"),
     ("model_mb", "ขนาด (MB)"),
 ]
@@ -467,6 +493,7 @@ def results_table(results: list[dict]) -> pd.DataFrame:
                 "test_precision": m.get("test_precision", np.nan),
                 "test_recall": m.get("test_recall", np.nan),
                 "test_savings": m.get("test_savings", np.nan),
+                "test_savings_thb": m.get("test_savings", np.nan) * r.get("eur_to_thb", np.nan),
                 "latency_p95_ms": m["latency_p95_ms"],
                 "model_mb": m["model_mb"],
                 "run_id": r["run_id"],
@@ -491,10 +518,17 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
 
     header = "| " + " | ".join(title for _, title in REPORT_COLUMNS) + " |"
     divider = "|" + "---|" * len(REPORT_COLUMNS)
+    money = (
+        f" · ต้นทุนคิดเป็นยูโร (หน่วยของ Amount) ค่าตรวจสอบ {results[0]['review_fee_eur']:.2f} EUR/รายการ"
+        f" · แปลงเป็นบาทที่ {results[0]['eur_to_thb']} บาท/ยูโร"
+        f" · threshold คือจุดต้นทุนต่ำสุดที่ precision บน validation ≥ {results[0]['min_alert_precision']}"
+        if results and "eur_to_thb" in results[0]
+        else ""
+    )
     lines = [
         "# ผลการทดลอง",
         "",
-        "เลือก threshold จากชุด validation แล้ววัดผลบนชุด test · เงินที่ประหยัดได้เทียบกับกรณีไม่มีระบบ",
+        "เลือก threshold จากชุด validation แล้ววัดผลบนชุด test · เงินที่ประหยัดได้เทียบกับกรณีไม่มีระบบ" + money,
         "",
         header,
         divider,
@@ -521,6 +555,10 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
         "model_uri": f"runs:/{best['run_id']}/model" if best["run_id"] else None,
         "threshold": best["threshold"],
         "data_version": best["data_version"],
+        "currency": "EUR",
+        "review_fee_eur": best.get("review_fee_eur"),
+        "eur_to_thb": best.get("eur_to_thb"),
+        "min_alert_precision": best.get("min_alert_precision"),
         "metrics": best["metrics"],
     }
     path = out_dir / "best_model.json"

@@ -6,7 +6,10 @@ data:
   target: Class
   split: {train: 0.6, val: 0.2, test: 0.2}   # เรียงตาม Time ไม่สุ่ม
 cost:
-  review_fee_thb: 50        # ต้นทุน false positive ต่อรายการ
+  currency: EUR             # Amount ในชุดข้อมูล ULB เป็นยูโร (ผู้ถือบัตรในยุโรป) ต้นทุนทั้งหมดจึงคิดเป็นยูโร
+  review_fee_thb: 50        # ต้นทุน false positive ต่อรายการ (สมมติฐานค่าตรวจสอบ 1 รายการ หน่วยบาท)
+  min_alert_precision: 0.80 # ทุก 5 รายการที่แจ้งเตือน ต้องเป็นโกงจริงอย่างน้อย 4 (ภาระทีมตรวจ) ใช้ตอนเลือก threshold
+  eur_to_thb: 38.03         # อัตรา ณ 1 ต.ค. 2569 ใช้แปลงค่าตรวจสอบเป็นยูโร: 50 / 38.03 ≈ 1.31 EUR
 gate:
   min_recall: 0.75
   max_pr_auc_drop: 0.005    # เทียบกับ champion
