@@ -32,6 +32,7 @@ pip install -e .
 
 make validate   # ตรวจ schema ข้อมูลดิบ
 make all        # รันทั้ง pipeline ด้วยคำสั่งเดียว
+make retrain    # รับสัญญาณ RETRAIN แล้วรันวงจรฝึกและตรวจโมเดลใหม่
 docker compose up -d --build   # mlflow :5000 · api :8000 · prometheus :9090 · grafana :3000
 ```
 
