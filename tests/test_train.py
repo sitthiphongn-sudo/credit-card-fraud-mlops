@@ -196,6 +196,8 @@ def test_run_experiment_reports_val_test_latency_and_size(splits):
     assert result["run_id"] is None
     cost = load_params()["cost"]
     assert result["review_fee_eur"] == pytest.approx(cost["review_fee_thb"] / cost["eur_to_thb"])
+    # threshold ต้องเคารพข้อจำกัดภาระทีมตรวจ: precision บน validation ไม่ต่ำกว่าเกณฑ์
+    assert m["val_precision"] >= cost["min_alert_precision"]
 
 
 def test_threshold_is_chosen_from_validation_not_test(splits):
@@ -296,6 +298,7 @@ def test_log_run_records_all_six_items(splits, fake_mlflow):
     assert calls["params"]["model__class_weight"] == "balanced"  # 3) ไฮเปอร์พารามิเตอร์
     assert "threshold" in calls["params"]
     assert calls["params"]["currency"] == "EUR"
+    assert calls["params"]["min_alert_precision"] == load_params()["cost"]["min_alert_precision"]
     assert "test_pr_auc" in calls["metrics"]  # 4) ตัวชี้วัด
     assert all(np.isfinite(v) for v in calls["metrics"].values())
     assert calls["models"] == 1 and "result.json" in calls["dicts"]  # 5) ไฟล์ผลลัพธ์

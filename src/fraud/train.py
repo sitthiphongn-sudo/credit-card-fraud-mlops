@@ -8,6 +8,7 @@
     1. จัดการข้อมูลไม่สมดุลเฉพาะ "ชุดฝึก" ตามกลยุทธ์ของการทดลองนั้น (none / class_weight / undersample)
     2. เทรนบนชุดฝึก
     3. เลือก threshold ที่ต้นทุนต่ำสุดจาก "ชุด validation" (ห้ามเลือกบนชุด test)
+       โดย precision บน validation ต้องไม่ต่ำกว่า cost.min_alert_precision (ภาระงานทีมตรวจ)
     4. วัดผลบนชุด test ด้วย threshold นั้น + ช่วงความเชื่อมั่นของ PR-AUC แบบ bootstrap
     5. วัดเวลาทำนายทีละรายการ (p50 / p95) และขนาดไฟล์โมเดล เพื่อเทียบกับเกณฑ์ gate
     6. บันทึกลง MLflow ครบ 6 อย่าง: เวอร์ชันโค้ด (git sha), เวอร์ชันข้อมูล (hash),
@@ -302,7 +303,8 @@ def run_experiment(
     # เลือก threshold จาก validation เท่านั้น
     X_val, y_val = split_xy(val_df)
     val_proba = model.predict_proba(X_val)[:, 1]
-    threshold, _ = best_cost_threshold(y_val, val_proba, X_val["Amount"], fee)
+    min_precision = p["cost"]["min_alert_precision"]
+    threshold, _ = best_cost_threshold(y_val, val_proba, X_val["Amount"], fee, min_precision=min_precision)
     val_metrics = evaluate_scores(y_val, val_proba, X_val["Amount"], threshold, fee)
     metrics = {f"val_{k}": v for k, v in val_metrics.items()}
 
@@ -336,6 +338,7 @@ def run_experiment(
         "data_version": data_version,
         "review_fee_eur": fee,
         "eur_to_thb": p["cost"]["eur_to_thb"],
+        "min_alert_precision": min_precision,
         "metrics": metrics,
         "run_id": None,
     }
@@ -384,6 +387,7 @@ def log_run(result: dict, model, X_example: pd.DataFrame) -> str:
                 "review_fee_thb": p["cost"]["review_fee_thb"],
                 "review_fee_eur": result["review_fee_eur"],
                 "eur_to_thb": result["eur_to_thb"],
+                "min_alert_precision": result["min_alert_precision"],
                 "train_rows": result["train_rows"],
                 "train_fraud": result["train_fraud"],
             }
@@ -517,6 +521,7 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
     money = (
         f" · ต้นทุนคิดเป็นยูโร (หน่วยของ Amount) ค่าตรวจสอบ {results[0]['review_fee_eur']:.2f} EUR/รายการ"
         f" · แปลงเป็นบาทที่ {results[0]['eur_to_thb']} บาท/ยูโร"
+        f" · threshold คือจุดต้นทุนต่ำสุดที่ precision บน validation ≥ {results[0]['min_alert_precision']}"
         if results and "eur_to_thb" in results[0]
         else ""
     )
@@ -553,6 +558,7 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
         "currency": "EUR",
         "review_fee_eur": best.get("review_fee_eur"),
         "eur_to_thb": best.get("eur_to_thb"),
+        "min_alert_precision": best.get("min_alert_precision"),
         "metrics": best["metrics"],
     }
     path = out_dir / "best_model.json"
