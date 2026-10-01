@@ -6,16 +6,17 @@ services:
     ports: ["5000:5000"]
 
   api:
-    build: {context: ., dockerfile: serving/Dockerfile}
+    build:
+      context: .
+      dockerfile: serving/Dockerfile
+    ports:
+      - "8000:8000"
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MODEL_URI: models:/fraud-detector@champion
-    ports: ["8000:8000"]
-    depends_on: [mlflow]
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      retries: 5
+    depends_on:
+      - mlflow
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.1.0

@@ -12,6 +12,7 @@ src/fraud.egg-info/PKG-INFO
 src/fraud.egg-info/SOURCES.txt
 src/fraud.egg-info/dependency_links.txt
 src/fraud.egg-info/top_level.txt
+tests/test_api.py
 tests/test_evaluate.py
 tests/test_features.py
 tests/test_train.py
