@@ -214,6 +214,16 @@ def build_estimator(exp: Experiment, seed: int, pos_weight: float):
 # ---------------------------------------------------------------------------
 
 
+def review_fee_eur(cost: dict) -> float:
+    """ค่าตรวจสอบต่อรายการในหน่วยยูโร ให้หน่วยตรงกับ Amount ของชุดข้อมูล ULB
+
+    สมมติฐานค่าตรวจสอบตั้งไว้เป็นบาทใน configs/params.yaml จึงต้องหารด้วยอัตราแลกเปลี่ยนก่อน
+    ถ้าไม่แปลง จะเอาบาทไปบวกกับยูโรตรง ๆ ทำให้ต้นทุน false positive แพงเกินจริงราว 38 เท่า
+    และ threshold ที่ได้จะสูงเกินไป (แจ้งเตือนน้อยเกินไป)
+    """
+    return cost["review_fee_thb"] / cost["eur_to_thb"]
+
+
 def measure_latency(model, X: pd.DataFrame, n: int = LATENCY_SAMPLES) -> tuple[float, float]:
     """วัดเวลาทำนายทีละ 1 รายการ (แบบเดียวกับตอนให้บริการจริง) คืน (p50, p95) หน่วยมิลลิวินาที"""
     rows = X.head(n)
@@ -275,7 +285,7 @@ def run_experiment(
     """เทรนและประเมินหนึ่งการทดลอง คืน (ผลลัพธ์แบบ dict, โมเดลที่เทรนแล้ว)"""
     p = load_params()
     seed = p["seed"]
-    fee = p["cost"]["review_fee_thb"]
+    fee = review_fee_eur(p["cost"])  # ยูโร หน่วยเดียวกับ Amount
 
     fit_df = undersample(train_df, UNDERSAMPLE_RATIO, seed) if exp.imbalance == "undersample" else train_df
     X_fit, y_fit = split_xy(fit_df)
@@ -324,6 +334,8 @@ def run_experiment(
         "train_rows": len(fit_df),
         "train_fraud": n_fraud,
         "data_version": data_version,
+        "review_fee_eur": fee,
+        "eur_to_thb": p["cost"]["eur_to_thb"],
         "metrics": metrics,
         "run_id": None,
     }
@@ -368,7 +380,10 @@ def log_run(result: dict, model, X_example: pd.DataFrame) -> str:
                 "imbalance": result["imbalance"],
                 "threshold": result["threshold"],
                 "seed": p["seed"],
+                "currency": p["cost"]["currency"],
                 "review_fee_thb": p["cost"]["review_fee_thb"],
+                "review_fee_eur": result["review_fee_eur"],
+                "eur_to_thb": result["eur_to_thb"],
                 "train_rows": result["train_rows"],
                 "train_fraud": result["train_fraud"],
             }
@@ -446,7 +461,8 @@ REPORT_COLUMNS = [
     ("threshold", "threshold"),
     ("test_precision", "test Precision"),
     ("test_recall", "test Recall"),
-    ("test_savings", "เงินที่ประหยัดได้ (test)"),
+    ("test_savings", "ประหยัดได้ test (EUR)"),
+    ("test_savings_thb", "ประหยัดได้ test (บาท)"),
     ("latency_p95_ms", "p95 (ms)"),
     ("model_mb", "ขนาด (MB)"),
 ]
@@ -473,6 +489,7 @@ def results_table(results: list[dict]) -> pd.DataFrame:
                 "test_precision": m.get("test_precision", np.nan),
                 "test_recall": m.get("test_recall", np.nan),
                 "test_savings": m.get("test_savings", np.nan),
+                "test_savings_thb": m.get("test_savings", np.nan) * r.get("eur_to_thb", np.nan),
                 "latency_p95_ms": m["latency_p95_ms"],
                 "model_mb": m["model_mb"],
                 "run_id": r["run_id"],
@@ -497,10 +514,16 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
 
     header = "| " + " | ".join(title for _, title in REPORT_COLUMNS) + " |"
     divider = "|" + "---|" * len(REPORT_COLUMNS)
+    money = (
+        f" · ต้นทุนคิดเป็นยูโร (หน่วยของ Amount) ค่าตรวจสอบ {results[0]['review_fee_eur']:.2f} EUR/รายการ"
+        f" · แปลงเป็นบาทที่ {results[0]['eur_to_thb']} บาท/ยูโร"
+        if results and "eur_to_thb" in results[0]
+        else ""
+    )
     lines = [
         "# ผลการทดลอง",
         "",
-        "เลือก threshold จากชุด validation แล้ววัดผลบนชุด test · เงินที่ประหยัดได้เทียบกับกรณีไม่มีระบบ",
+        "เลือก threshold จากชุด validation แล้ววัดผลบนชุด test · เงินที่ประหยัดได้เทียบกับกรณีไม่มีระบบ" + money,
         "",
         header,
         divider,
@@ -527,6 +550,9 @@ def write_reports(results: list[dict], best: dict | None, out_dir: Path = REPORT
         "model_uri": f"runs:/{best['run_id']}/model" if best["run_id"] else None,
         "threshold": best["threshold"],
         "data_version": best["data_version"],
+        "currency": "EUR",
+        "review_fee_eur": best.get("review_fee_eur"),
+        "eur_to_thb": best.get("eur_to_thb"),
         "metrics": best["metrics"],
     }
     path = out_dir / "best_model.json"

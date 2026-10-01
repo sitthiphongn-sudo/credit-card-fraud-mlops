@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from fraud import train as T
+from fraud.config import load_params
 from fraud.features import V_COLUMNS
 
 # ---------------------------------------------------------------------------
@@ -143,6 +144,11 @@ def test_boosting_weight_strategies():
     assert T.boosting_weight("none", 576.0) == 1.0
 
 
+def test_review_fee_is_converted_to_euro_to_match_amount():
+    """Amount ของ ULB เป็นยูโร แต่ค่าตรวจสอบตั้งเป็นบาท ต้องแปลงก่อนรวมต้นทุน ไม่งั้นหน่วยเงินปนกัน"""
+    assert T.review_fee_eur({"review_fee_thb": 50.0, "eur_to_thb": 40.0}) == pytest.approx(1.25)
+
+
 def test_lightgbm_params_guard_against_exploding_leaf_values():
     """LightGBM พังเมื่อ min_child_weight ต่ำ (ค่าเริ่มต้น 0.001) — ต้องตั้งไว้อย่างน้อย 1 เสมอ"""
     for name in ("lightgbm_class_weight", "lightgbm_none", "lightgbm_sqrt_weight"):
@@ -188,6 +194,8 @@ def test_run_experiment_reports_val_test_latency_and_size(splits):
     assert 0.0 < result["threshold"] < 1.0
     assert result["data_version"] == "abc123"
     assert result["run_id"] is None
+    cost = load_params()["cost"]
+    assert result["review_fee_eur"] == pytest.approx(cost["review_fee_thb"] / cost["eur_to_thb"])
 
 
 def test_threshold_is_chosen_from_validation_not_test(splits):
@@ -265,6 +273,7 @@ def test_write_reports_creates_table_and_handoff_file(splits, tmp_path):
     assert (tmp_path / "experiments.csv").exists()
     markdown = (tmp_path / "experiments.md").read_text(encoding="utf-8")
     assert "logreg_class_weight **(เลือก)**" in markdown
+    assert "ประหยัดได้ test (บาท)" in markdown
     handoff = json.loads((tmp_path / "best_model.json").read_text(encoding="utf-8"))
     assert handoff["name"] == "logreg_class_weight"
     assert 0.0 < handoff["threshold"] < 1.0
@@ -286,6 +295,7 @@ def test_log_run_records_all_six_items(splits, fake_mlflow):
     assert calls["tags"]["data_version"] == "abc123"  # 2) เวอร์ชันข้อมูล
     assert calls["params"]["model__class_weight"] == "balanced"  # 3) ไฮเปอร์พารามิเตอร์
     assert "threshold" in calls["params"]
+    assert calls["params"]["currency"] == "EUR"
     assert "test_pr_auc" in calls["metrics"]  # 4) ตัวชี้วัด
     assert all(np.isfinite(v) for v in calls["metrics"].values())
     assert calls["models"] == 1 and "result.json" in calls["dicts"]  # 5) ไฟล์ผลลัพธ์
