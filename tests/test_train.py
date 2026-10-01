@@ -143,6 +143,13 @@ def test_boosting_weight_strategies():
     assert T.boosting_weight("none", 576.0) == 1.0
 
 
+def test_lightgbm_params_guard_against_exploding_leaf_values():
+    """LightGBM พังเมื่อ min_child_weight ต่ำ (ค่าเริ่มต้น 0.001) — ต้องตั้งไว้อย่างน้อย 1 เสมอ"""
+    for name in ("lightgbm_class_weight", "lightgbm_none", "lightgbm_sqrt_weight"):
+        assert T.EXPERIMENTS_BY_NAME[name].params["min_child_weight"] >= 1.0
+        assert T.EXPERIMENTS_BY_NAME[name].params["reg_lambda"] > 0
+
+
 def test_lightgbm_sqrt_weight_uses_square_root_of_training_ratio():
     pytest.importorskip("lightgbm")
     _, params = T.build_estimator(T.EXPERIMENTS_BY_NAME["lightgbm_sqrt_weight"], seed=42, pos_weight=576.0)

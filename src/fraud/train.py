@@ -106,6 +106,9 @@ LIGHTGBM_PARAMS = {
     "subsample": 0.8,
     "subsample_freq": 1,
     "colsample_bytree": 0.8,
+    # สองค่านี้คือการแก้ LightGBM ที่พัง (ดูคำอธิบายที่ EXPERIMENTS ด้านล่าง)
+    "min_child_weight": 1.0,  # ค่าเริ่มต้นของ LightGBM คือ 0.001 ต่ำเกินไปสำหรับข้อมูลที่ fraud มี 0.2%
+    "reg_lambda": 1.0,  # L2 ช่วยหดค่าของใบให้ไม่สุดโต่ง
 }
 XGBOOST_PARAMS = {
     "n_estimators": 400,
@@ -123,8 +126,11 @@ EXPERIMENTS = [
     Experiment("logreg_undersample", "logreg", "undersample", LOGREG_PARAMS),
     # โมเดลต้นไม้แบบ boosting ถ่วงน้ำหนักคลาสด้วย scale_pos_weight
     Experiment("lightgbm_class_weight", "lightgbm", "class_weight", LIGHTGBM_PARAMS),
-    # ข้อมูลจริง (28 ก.ย.): lightgbm_class_weight ได้ val PR-AUC 0.0069 เพราะ scale_pos_weight ~580
-    # แรงเกินจนคะแนนอิ่มตัว จึงเพิ่มสองแบบนี้เพื่อหาน้ำหนักที่เหมาะ
+    # ประวัติ: รอบแรก (28 ก.ย.) LightGBM ทุกแบบพัง val PR-AUC 0.007–0.08 แม้ไม่ถ่วงน้ำหนัก
+    # สาเหตุ: min_child_weight เริ่มต้นของ LightGBM = 0.001 ทำให้มีใบที่ผลรวม hessian เกือบศูนย์
+    # ค่าของใบ = ผลรวม gradient / ผลรวม hessian จึงพุ่งเป็นหลักหมื่น (|raw score| สูงสุด ~35,000)
+    # โมเดลลู่ออกตั้งแต่ตอนเทรน (train PR-AUC แค่ 0.33) ไม่ใช่ overfit
+    # แก้ด้วย min_child_weight=1 (เท่ากับค่าเริ่มต้นของ XGBoost) + L2 → val PR-AUC 0.787
     Experiment("lightgbm_none", "lightgbm", "none", LIGHTGBM_PARAMS),
     Experiment("lightgbm_sqrt_weight", "lightgbm", "sqrt_weight", LIGHTGBM_PARAMS),
     Experiment("xgboost_class_weight", "xgboost", "class_weight", XGBOOST_PARAMS),
@@ -148,8 +154,8 @@ def undersample(train_df: pd.DataFrame, ratio: int, seed: int) -> pd.DataFrame:
 def boosting_weight(imbalance: str, pos_weight: float) -> float:
     """ค่า scale_pos_weight ของโมเดล boosting ตามกลยุทธ์
 
-    - class_weight : จำนวนรายการปกติ / จำนวน fraud (~580 ในข้อมูลจริง) ถ่วงเต็มที่
-    - sqrt_weight  : รากที่สองของค่าข้างบน (~24) ถ่วงแบบนุ่มลง กันคะแนนอิ่มตัวจน PR-AUC พัง
+    - class_weight : จำนวนรายการปกติ / จำนวน fraud (~497 ในชุดฝึกจริง) ถ่วงเต็มที่
+    - sqrt_weight  : รากที่สองของค่าข้างบน (~22) ถ่วงแบบนุ่มลง กันคะแนนอิ่มตัวจน PR-AUC พัง
     - อื่น ๆ        : 1.0 ไม่ถ่วง ปล่อยให้การเลือก threshold จากต้นทุนจัดการความไม่สมดุลแทน
     """
     if imbalance == "class_weight":
