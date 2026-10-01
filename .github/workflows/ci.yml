@@ -18,6 +18,8 @@ jobs:
         run: ruff check .
       - name: Unit tests
         run: pytest -q
+        env:
+          PYTHONPATH: .
 
   data-validation:
     needs: code-quality
