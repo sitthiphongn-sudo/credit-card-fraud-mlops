@@ -21,3 +21,5 @@
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยแก้ Pipeline ให้ตรวจข้อมูลดิบด้วย `validate_raw` และเพิ่ม unit test ยืนยันการเรียกใช้ | `pipelines/flow.py`, `tests/test_flow.py` |
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเชื่อม XGBoost experiment และแปลง test metrics จากงานโมเดลเข้าสู่ Model Gate พร้อม unit tests | `pipelines/flow.py`, `tests/test_flow.py` |
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเพิ่มการโหลด metrics ของ champion จาก MLflow เพื่อเปรียบเทียบกับ candidate ก่อนเลื่อน alias พร้อม unit tests | `src/fraud/gate.py`, `pipelines/flow.py`, `tests/test_gate.py`, `tests/test_flow.py` |
+
+| 2026-10-01 | ธรรมรักษ์ | Codex | ช่วยออกแบบการรับสัญญาณ RETRAIN เพื่อเรียก Prefect training pipeline เพิ่มคำสั่ง Makefile เอกสาร และ unit tests โดยจำลองการเรียก DAG ไม่ให้เทรนจริง | `pipelines/flow.py`, `tests/test_flow.py`, `Makefile`, `README.md`, `docs/model_release.md` |

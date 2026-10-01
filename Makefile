@@ -1,4 +1,4 @@
-.PHONY: lint test validate all gate rollback serve down
+.PHONY: lint test validate all retrain gate rollback serve down
 
 lint:
 	ruff check .
@@ -11,6 +11,9 @@ validate:
 
 all:
 	python pipelines/flow.py
+
+retrain:
+	python pipelines/flow.py --signal RETRAIN
 
 gate:
 	python -m fraud.gate check --candidate "$(CANDIDATE)" $(if $(CHAMPION),--champion "$(CHAMPION)",)

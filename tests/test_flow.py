@@ -5,6 +5,7 @@ from pipelines.flow import (
     check,
     promote_if_approved,
     register_candidate,
+    retrain_pipeline,
     train,
 )
 
@@ -197,3 +198,30 @@ def test_candidate_is_compared_with_loaded_champion(monkeypatch):
         )
 
     assert promoted == []
+
+def test_retrain_signal_starts_training_pipeline(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "pipelines.flow.training_pipeline",
+        lambda: calls.append("started") or "7",
+    )
+
+    result = retrain_pipeline.fn("RETRAIN")
+
+    assert result == "7"
+    assert calls == ["started"]
+
+
+def test_other_signal_does_not_start_training_pipeline(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "pipelines.flow.training_pipeline",
+        lambda: calls.append("started"),
+    )
+
+    result = retrain_pipeline.fn("NORMAL")
+
+    assert result == "ignored"
+    assert calls == []

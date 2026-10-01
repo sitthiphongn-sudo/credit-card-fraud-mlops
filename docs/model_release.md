@@ -63,6 +63,21 @@ Candidate และ champion ต้องประเมินบนชุด te
 
 ย้อนเวอร์ชัน: `make rollback VERSION=4`
 
+## Automatic retraining
+
+เมื่อระบบ monitoring ตรวจพบความผิดปกติตามนโยบาย ระบบจะส่งสัญญาณ
+`RETRAIN` เพื่อเรียกวงจรฝึกโมเดลใหม่:
+
+`make retrain`
+
+คำสั่งที่เทียบเท่าบนเครื่องที่ไม่มี Make:
+
+`python pipelines/flow.py --signal RETRAIN`
+
+Pipeline จะรันตั้งแต่รับข้อมูล ตรวจคุณภาพ แบ่งชุด เทรน ประเมิน
+ลงทะเบียนเป็น challenger และผ่าน Model Gate หากผ่านจึงเลื่อนเป็น
+champion หากไม่ผ่าน Flow จะจบด้วยสถานะล้มเหลวและคง champion เดิม
+
 ## Current limitation
 
 API ปัจจุบันโหลดโมเดลตอนเริ่ม service เท่านั้น หลังเปลี่ยน alias

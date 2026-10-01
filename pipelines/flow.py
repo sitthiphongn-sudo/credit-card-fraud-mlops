@@ -3,6 +3,8 @@
 รัน: make all  (หรือ python pipelines/flow.py)
 TODO(ธรรมรักษ์): evaluate บน test → gate → register → ตั้ง alias
 """
+import argparse
+
 from prefect import flow, task
 
 from fraud.config import ROOT, load_params
@@ -34,7 +36,6 @@ def split(df):
     return time_split(df)
 
 
-@task
 @task
 def train(
     train_df,
@@ -148,5 +149,32 @@ def training_pipeline():
     )
 
 
+@flow(name="fraud-retrain-pipeline")
+def retrain_pipeline(signal: str) -> str:
+    """เริ่มวงจรเทรนใหม่เมื่อได้รับสัญญาณ RETRAIN เท่านั้น."""
+    if signal.strip().upper() != "RETRAIN":
+        return "ignored"
+
+    return training_pipeline()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="รัน training pipeline หรือรับสัญญาณ retrain",
+    )
+    parser.add_argument(
+        "--signal",
+        choices=("TRAIN", "RETRAIN"),
+        default="TRAIN",
+        type=str.upper,
+    )
+    args = parser.parse_args()
+
+    if args.signal == "RETRAIN":
+        retrain_pipeline(args.signal)
+    else:
+        training_pipeline()
+
+
 if __name__ == "__main__":
-    training_pipeline()
+    main()
