@@ -4,7 +4,7 @@ import pandas as pd
 import pandera.pandas as pa
 import pytest
 
-from fraud.validate import validate
+from fraud.validate import validate,validate_raw
 
 
 SAMPLE_DIR = Path("data/sample")
@@ -33,3 +33,12 @@ def test_invalid_samples_fail_validation(filename):
 
     with pytest.raises(pa.errors.SchemaErrors):
         validate(df)
+
+def test_validate_raw_allows_statistical_outlier():
+    df = pd.read_csv(SAMPLE_DIR / "valid.csv").head(1).copy()
+
+    df.loc[df.index[0], "V1"] = 1000.0
+
+    result = validate_raw(df)
+
+    assert len(result) == 1
