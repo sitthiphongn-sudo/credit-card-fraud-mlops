@@ -46,7 +46,7 @@ groups:
           fraud_monitor_fraud_prediction_rate_threshold_configured == 1
           and
           (
-            sum(rate(fraud_predictions_total{label="fraud"}[5m]))
+            sum(rate(fraud_predictions_total{prediction="fraud"}[5m]))
             /
             clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9)
             > scalar(fraud_monitor_max_fraud_prediction_rate_threshold)

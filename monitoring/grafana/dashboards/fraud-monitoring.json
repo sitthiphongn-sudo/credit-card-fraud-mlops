@@ -232,8 +232,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (label) (rate(fraud_predictions_total[5m])) / clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9)",
-          "legendFormat": "{{label}}"
+          "expr": "sum by (prediction) (rate(fraud_predictions_total[5m])) / clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9)",
+          "legendFormat": "{{prediction}}"
         }
       ],
       "fieldConfig": {
