@@ -1,9 +1,100 @@
-# TODO(โชติกานต์): เพิ่มกฎ drift / concept drift (อ้างอิง Lab 10) — เกณฑ์ต้องตรงกับ configs/params.yaml
 groups:
-  - name: system-health
+  - name: fraud-monitoring
     rules:
+      - alert: FraudApiMetricsUnavailable
+        expr: up{job="fraud-api"} == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape the fraud API metrics endpoint"
+          action: "Check the API container, /metrics endpoint, and network connectivity."
+
+      - alert: MonitoringExporterUnavailable
+        expr: up{job="fraud-monitoring-batch"} == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape the batch monitoring exporter"
+          action: "Check drift_exporter.py before trusting model-health dashboard values."
+
       - alert: HighLatencyP95
-        expr: histogram_quantile(0.95, sum by (le) (rate(fraud_request_latency_seconds_bucket[1m]))) > 0.1
-        for: 1m
-        labels: {severity: warning}
-        annotations: {summary: "p95 latency เกิน SLO 100 ms"}
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(fraud_request_latency_seconds_bucket[5m]))
+          ) > scalar(fraud_monitor_p95_slo_seconds)
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fraud API p95 latency is above the configured SLO"
+          action: "Check API load, model latency, workers, and resource saturation."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(fraud_requests_total{status="error"}[5m]))
+          /
+          clamp_min(sum(rate(fraud_requests_total[5m])), 1e-9)
+          > scalar(fraud_monitor_max_error_rate_threshold)
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fraud API error rate is above the configured threshold"
+          action: "Inspect API logs and serving health before trusting predictions."
+
+      - alert: FraudAlertRateSpike
+        expr: |
+          fraud_monitor_fraud_prediction_rate_threshold_configured == 1
+          and
+          (
+            sum(rate(fraud_predictions_total{prediction="fraud"}[5m]))
+            /
+            clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9)
+            > scalar(fraud_monitor_max_fraud_prediction_rate_threshold)
+          )
+        labels:
+          severity: warning
+        annotations:
+          summary: "The online share of fraud predictions is unusually high"
+          action: "Inspect fraud_score and run the batch drift check."
+
+      - alert: FeatureDriftShareHigh
+        expr: fraud_monitor_drift_share >= scalar(fraud_monitor_drift_share_threshold)
+        labels:
+          severity: warning
+        annotations:
+          summary: "Feature drift share reached the monitoring threshold"
+          action: "Inspect Evidently drifted features and model-quality metrics."
+
+      - alert: RecallDropCritical
+        expr: fraud_monitor_recall_drop >= scalar(fraud_monitor_max_recall_drop_threshold)
+        labels:
+          severity: critical
+        annotations:
+          summary: "Realized fraud recall dropped too far below the baseline"
+          action: "Emit RETRAIN and evaluate a challenger against the champion."
+
+      - alert: ConceptDriftSuspected
+        expr: fraud_monitor_concept_gap >= scalar(fraud_monitor_concept_gap_threshold)
+        labels:
+          severity: critical
+        annotations:
+          summary: "Realized recall is much lower than the CBPE estimate"
+          action: "Treat this as concept-drift evidence after validating returned labels."
+
+      - alert: MonitoringConfigInvalid
+        expr: fraud_monitor_config_valid == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Required monitoring configuration is invalid"
+          action: "Check the monitoring section in configs/params.yaml."
+
+      - alert: DriftMonitoringStale
+        expr: |
+          time() - fraud_monitor_last_run_timestamp_seconds
+          > scalar(fraud_monitor_stale_after_seconds)
+        labels:
+          severity: critical
+        annotations:
+          summary: "The drift batch has not completed within the freshness window"
+          action: "Check the batch job first; do not trust stale green values."
