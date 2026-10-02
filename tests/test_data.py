@@ -1,6 +1,6 @@
 import pandas as pd
 
-from fraud.data import time_split
+from fraud.data import file_hash, time_split
 
 
 def make_df(n_rows=100):
@@ -51,3 +51,12 @@ def test_time_split_has_non_overlapping_time_ranges():
 
     assert train["Time"].max() <= val["Time"].min()
     assert val["Time"].max() <= test["Time"].min()
+
+def test_file_hash_is_deterministic(tmp_path):
+    sample_file = tmp_path / "sample.txt"
+    sample_file.write_text("fraud-data-version", encoding="utf-8")
+
+    first_hash = file_hash(sample_file)
+    second_hash = file_hash(sample_file)
+
+    assert first_hash == second_hash
