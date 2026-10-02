@@ -29,9 +29,19 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
       - run: pip install -r requirements.txt && pip install -e .
-      # TODO(กันตพัฒน์): ดึง sample ข้อมูลจริงแล้วรัน python -m fraud.validate
-      - name: Schema test on sample data
-        run: pytest -q tests/test_features.py -k data
+      - name: Validate sample data
+        shell: bash
+        run: |
+          python -m fraud.validate data/sample/valid.csv
+
+          for file in data/sample/bad_*.csv; do
+            status=0
+            python -m fraud.validate "$file" || status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "Expected exit 1 for $file, got $status"
+              exit 1
+            fi
+          done
 
   model-gate:
     needs: data-validation
