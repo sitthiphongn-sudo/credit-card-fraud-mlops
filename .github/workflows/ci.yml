@@ -77,7 +77,7 @@ jobs:
           rm -f data/processed/{train,val,test}.csv data/processed/data_version.json
           rm -f reports/experiments/{best_model.json,experiments.csv,experiments.md}
       - name: Generate reproducible synthetic CI data (20000 rows, 2% fraud)
-        run: python scripts/make_ci_data.py
+        run: python scripts/make_ci_data.py --signal-strength 0
       - name: Train existing LightGBM experiment without MLflow
         shell: bash
         run: python -m fraud.train --only lightgbm_none --no-mlflow --bootstrap 0 2>&1 | tee reports/ci/train.log
