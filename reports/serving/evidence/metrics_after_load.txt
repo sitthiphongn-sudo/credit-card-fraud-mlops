@@ -1,0 +1,46 @@
+> curl.exe http://localhost:8000/metrics
+# HELP fraud_requests_total Total /predict requests by status (success, bad_request, error).
+# TYPE fraud_requests_total counter
+fraud_requests_total{status="success"} 3052.0
+fraud_requests_total{status="bad_request"} 5.0
+fraud_requests_total{status="error"} 0.0
+# HELP fraud_predictions_total Total fraud predictions by label (fraud, not_fraud).
+# TYPE fraud_predictions_total counter
+fraud_predictions_total{label="fraud"} 1.0
+fraud_predictions_total{label="not_fraud"} 3051.0
+# HELP fraud_request_latency_seconds Latency of /predict requests in seconds.
+# TYPE fraud_request_latency_seconds histogram
+fraud_request_latency_seconds_sum 117.32068260200413
+fraud_request_latency_seconds_bucket{le="0.005"} 476.0
+fraud_request_latency_seconds_bucket{le="0.01"} 1048.0
+fraud_request_latency_seconds_bucket{le="0.025"} 1158.0
+fraud_request_latency_seconds_bucket{le="0.05"} 2019.0
+fraud_request_latency_seconds_bucket{le="0.075"} 2474.0
+fraud_request_latency_seconds_bucket{le="0.1"} 3049.0
+fraud_request_latency_seconds_bucket{le="0.25"} 3057.0
+fraud_request_latency_seconds_bucket{le="0.5"} 3057.0
+fraud_request_latency_seconds_bucket{le="1.0"} 3057.0
+fraud_request_latency_seconds_bucket{le="2.5"} 3057.0
+fraud_request_latency_seconds_bucket{le="5.0"} 3057.0
+fraud_request_latency_seconds_bucket{le="+Inf"} 3057.0
+fraud_request_latency_seconds_count 3057.0
+# HELP fraud_score Distribution of fraud probability scores.
+# TYPE fraud_score histogram
+fraud_score_sum 1.1008059120065854
+fraud_score_bucket{le="0.01"} 3051.0
+fraud_score_bucket{le="0.05"} 3051.0
+fraud_score_bucket{le="0.1"} 3051.0
+fraud_score_bucket{le="0.2"} 3051.0
+fraud_score_bucket{le="0.3"} 3051.0
+fraud_score_bucket{le="0.4"} 3051.0
+fraud_score_bucket{le="0.5"} 3051.0
+fraud_score_bucket{le="0.51"} 3051.0
+fraud_score_bucket{le="0.6"} 3051.0
+fraud_score_bucket{le="0.7"} 3051.0
+fraud_score_bucket{le="0.8"} 3051.0
+fraud_score_bucket{le="0.9"} 3051.0
+fraud_score_bucket{le="0.95"} 3051.0
+fraud_score_bucket{le="0.99"} 3051.0
+fraud_score_bucket{le="1.0"} 3052.0
+fraud_score_bucket{le="+Inf"} 3052.0
+fraud_score_count 3052.0

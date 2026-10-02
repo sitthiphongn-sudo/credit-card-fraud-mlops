@@ -1,0 +1,39 @@
+### health
+> curl.exe http://localhost:8000/health
+HTTP 200 OK
+{"status":"healthy","model_loaded":true,"model_uri":"models:/fraud-detector@champion","model_version":"1","run_id":"825b657c3d4d4de9b673cc11f3d17952","threshold":0.51}
+
+### predict normal (real legit row)
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/normal.json"
+HTTP 200 OK
+{"is_fraud":0,"fraud_score":3.0509455732613972e-06,"threshold":0.51,"model_version":"1"}
+
+### predict fraud example (real fraud row)
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/fraud_example.json"
+HTTP 200 OK
+{"is_fraud":1,"fraud_score":0.9974367842696562,"threshold":0.51,"model_version":"1"}
+
+### bad: NaN
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/nan.json"
+HTTP 400 OK
+{"detail":"Feature 'Amount' (index 29) must be finite, got nan."}
+
+### bad: negative Amount
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/negative_amount.json"
+HTTP 400 OK
+{"detail":"Amount must be greater than or equal to 0."}
+
+### bad: text in feature
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/text_in_feature.json"
+HTTP 400 OK
+{"detail":"Feature 'Amount' (index 29) must be a number."}
+
+### bad: text only ['abc']
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/text_only.json"
+HTTP 400 OK
+{"detail":"Expected 30 features, got 1."}
+
+### bad: 29 features
+> curl.exe -X POST http://localhost:8000/predict -H "Content-Type: application/json" --data-binary "@reports/serving/evidence/payloads/wrong_count_29.json"
+HTTP 400 OK
+{"detail":"Expected 30 features, got 29."}

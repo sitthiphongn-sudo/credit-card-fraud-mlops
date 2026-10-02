@@ -1,0 +1,4 @@
+# 2026-10-02 23:50:41 +07:00
+> ruff check serving tests/test_api.py
+# exit=0
+All checks passed!
