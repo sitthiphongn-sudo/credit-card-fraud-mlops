@@ -4,8 +4,7 @@ import pandas as pd
 import pandera.pandas as pa
 import pytest
 
-from fraud.validate import validate,validate_raw
-
+from fraud.validate import validate, validate_raw
 
 SAMPLE_DIR = Path("data/sample")
 
