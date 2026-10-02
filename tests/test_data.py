@@ -31,3 +31,23 @@ def test_time_split_uses_60_20_20_ratio():
     assert len(train) == 60
     assert len(val) == 20
     assert len(test) == 20
+
+def test_time_split_removes_duplicates_only_from_train():
+    df = make_df(100)
+
+    # Put one exact duplicate inside the training portion.
+    duplicate_row = df.iloc[[90]].copy()
+    df = pd.concat([df, duplicate_row], ignore_index=True)
+
+    train, val, test = time_split(df)
+
+    assert train.duplicated().sum() == 0
+
+
+def test_time_split_has_non_overlapping_time_ranges():
+    df = make_df(100)
+
+    train, val, test = time_split(df)
+
+    assert train["Time"].max() <= val["Time"].min()
+    assert val["Time"].max() <= test["Time"].min()
