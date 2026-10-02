@@ -13,7 +13,7 @@ from fraud.config import load_params
 def passes_gate(candidate: dict, champion: dict | None) -> tuple[bool, list[str]]:
     g = load_params()["gate"]
     reasons = []
-    required_metrics = ("recall", "pr_auc", "p95_ms", "model_mb")
+    required_metrics = ("recall_at_p80", "pr_auc", "p95_ms", "model_mb")
 
     for metric_name in required_metrics:
         if metric_name not in candidate:
@@ -21,33 +21,66 @@ def passes_gate(candidate: dict, champion: dict | None) -> tuple[bool, list[str]
 
     if reasons:
         return False, reasons
-    if candidate["recall"] < g["min_recall"]:
-        reasons.append(f"recall {candidate['recall']:.3f} < {g['min_recall']}")
+
+    if candidate["recall_at_p80"] < g["min_recall_at_p80"]:
+        reasons.append(
+            f"recall_at_p80 {candidate['recall_at_p80']:.3f}"
+            f" < {g['min_recall_at_p80']}"
+        )
+
     if champion and candidate["pr_auc"] < champion["pr_auc"] - g["max_pr_auc_drop"]:
-        reasons.append(f"pr_auc {candidate['pr_auc']:.4f} แย่กว่า champion {champion['pr_auc']:.4f}")
-    if candidate.get("p95_ms", 0) > g["max_p95_latency_ms"]:
+        reasons.append(
+            f"pr_auc {candidate['pr_auc']:.4f}"
+            f" แย่กว่า champion {champion['pr_auc']:.4f}"
+        )
+
+    if candidate["p95_ms"] > g["max_p95_latency_ms"]:
         reasons.append(f"p95 {candidate['p95_ms']} ms เกิน SLO")
-    if candidate.get("model_mb", 0) > g["max_model_mb"]:
+
+    if candidate["model_mb"] > g["max_model_mb"]:
         reasons.append(f"model {candidate['model_mb']} MB ใหญ่เกิน")
-    return (not reasons), reasons
+
+    return not reasons, reasons
+
+
+def candidate_from_best_model(data: dict) -> dict:
+    """แปลง metrics จาก best_model.json เป็นชื่อที่ Gate ใช้."""
+    metrics = data["metrics"]
+
+    if not isinstance(metrics, dict):
+        raise ValueError("metrics must be a JSON object")
+
+    key_map = {
+        "recall_at_p80": "test_recall_at_p80",
+        "pr_auc": "test_pr_auc",
+        "p95_ms": "latency_p95_ms",
+        "model_mb": "model_mb",
+    }
+
+    return {
+        gate_key: metrics[report_key]
+        for gate_key, report_key in key_map.items()
+        if report_key in metrics
+    }
 
 
 def load_metrics(path: Path) -> dict:
     with path.open(encoding="utf-8") as file:
-        metrics = json.load(file)
+        data = json.load(file)
 
-    if not isinstance(metrics, dict):
+    if not isinstance(data, dict):
         raise ValueError("metrics file must contain a JSON object")
 
-    return metrics
+    if "metrics" in data:
+        return candidate_from_best_model(data)
+
+    return data
+
 
 def model_size_mb(run_id: str) -> float:
     """ดาวน์โหลด model artifact และคำนวณขนาดรวมเป็น MB."""
     artifact_path = Path(
-        MlflowClient().download_artifacts(
-            run_id,
-            "model",
-        )
+        MlflowClient().download_artifacts(run_id, "model")
     )
 
     if artifact_path.is_file():
@@ -60,6 +93,7 @@ def model_size_mb(run_id: str) -> float:
         )
 
     return total_bytes / (1024 * 1024)
+
 
 def load_champion_metrics() -> dict | None:
     """อ่าน test metrics ของ champion ปัจจุบันจาก MLflow Registry."""
@@ -74,21 +108,15 @@ def load_champion_metrics() -> dict | None:
     if champion_version is None:
         return None
 
-    model_version = client.get_model_version(
-        model_name,
-        str(champion_version),
-    )
+    model_version = client.get_model_version(model_name, str(champion_version))
     run = client.get_run(model_version.run_id)
     metrics = run.data.metrics
 
     if "test_pr_auc" not in metrics:
-        raise RuntimeError(
-            "champion MLflow run is missing test_pr_auc"
-        )
+        raise RuntimeError("champion MLflow run is missing test_pr_auc")
 
-    return {
-        "pr_auc": float(metrics["test_pr_auc"]),
-    }
+    return {"pr_auc": float(metrics["test_pr_auc"])}
+
 
 def register_challenger(run_id: str, metrics: dict) -> str:
     """ลงทะเบียนโมเดลจาก MLflow run และตั้ง alias เป็น challenger."""
@@ -107,12 +135,7 @@ def register_challenger(run_id: str, metrics: dict) -> str:
         registry["challenger_alias"],
         version,
     )
-    client.set_model_version_tag(
-        model_name,
-        version,
-        "run_id",
-        run_id,
-    )
+    client.set_model_version_tag(model_name, version, "run_id", run_id)
 
     for metric_name, metric_value in sorted(metrics.items()):
         client.set_model_version_tag(
@@ -137,8 +160,9 @@ def promote_to_champion(version: str) -> None:
 
     print(f"champion -> version {version}")
 
+
 def rollback(to_version: str) -> None:
-    """ย้าย alias champion กลับไปยังเวอร์ชันที่ระบุ"""
+    """ย้าย alias champion กลับไปยังเวอร์ชันที่ระบุ."""
     registry = load_params()["registry"]
 
     MlflowClient().set_registered_model_alias(
@@ -149,28 +173,19 @@ def rollback(to_version: str) -> None:
 
     print(f"champion -> version {to_version}")
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="ตรวจ model gate หรือย้อนเวอร์ชัน champion"
+        description="ตรวจ model gate หรือย้อนเวอร์ชัน champion",
     )
-    subparsers = parser.add_subparsers(
-        dest="command",
-        required=True,
-    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     check_parser = subparsers.add_parser(
         "check",
         help="ตรวจ metrics ของ candidate",
     )
-    check_parser.add_argument(
-        "--candidate",
-        type=Path,
-        required=True,
-    )
-    check_parser.add_argument(
-        "--champion",
-        type=Path,
-    )
+    check_parser.add_argument("--candidate", type=Path, required=True)
+    check_parser.add_argument("--champion", type=Path)
 
     rollback_parser = subparsers.add_parser(
         "rollback",
@@ -186,7 +201,6 @@ def main() -> int:
 
     candidate = load_metrics(args.candidate)
     champion = load_metrics(args.champion) if args.champion else None
-
     passed, reasons = passes_gate(candidate, champion)
 
     if passed:

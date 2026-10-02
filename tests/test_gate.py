@@ -1,9 +1,11 @@
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from fraud.gate import (
     load_champion_metrics,
+    load_metrics,
     model_size_mb,
     passes_gate,
     promote_to_champion,
@@ -14,7 +16,7 @@ from fraud.gate import (
 
 def good_candidate(**changes):
     metrics = {
-        "recall": 0.80,
+        "recall_at_p80": 0.80,
         "pr_auc": 0.90,
         "p95_ms": 80,
         "model_mb": 20,
@@ -35,12 +37,12 @@ def test_candidate_passes_all_thresholds():
 
 def test_candidate_fails_recall():
     passed, reasons = passes_gate(
-        candidate=good_candidate(recall=0.60),
+        candidate=good_candidate(recall_at_p80=0.60),
         champion=None,
     )
 
     assert passed is False
-    assert any("recall" in reason for reason in reasons)
+    assert any("recall_at_p80" in reason for reason in reasons)
 
 
 def test_candidate_fails_against_champion():
@@ -64,6 +66,7 @@ def test_missing_latency_does_not_pass():
 
     assert passed is False
     assert any("p95_ms" in reason for reason in reasons)
+
 
 def test_register_challenger_sets_alias_and_tags(monkeypatch):
     calls = {"tags": []}
@@ -90,7 +93,7 @@ def test_register_challenger_sets_alias_and_tags(monkeypatch):
 
     version = register_challenger(
         run_id="run-123",
-        metrics={"recall": 0.80, "pr_auc": 0.90},
+        metrics={"recall_at_p80": 0.80, "pr_auc": 0.90},
     )
 
     assert version == "7"
@@ -112,7 +115,7 @@ def test_register_challenger_sets_alias_and_tags(monkeypatch):
     assert (
         "fraud-detector",
         "7",
-        "metric.recall",
+        "metric.recall_at_p80",
         "0.8",
     ) in calls["tags"]
 
@@ -137,6 +140,7 @@ def test_promote_to_champion_moves_alias(monkeypatch):
         "7",
     )
 
+
 def test_rollback_moves_champion_to_requested_version(monkeypatch):
     calls = {}
 
@@ -157,10 +161,8 @@ def test_rollback_moves_champion_to_requested_version(monkeypatch):
         "4",
     )
 
-def test_model_size_mb_sums_all_artifact_files(
-    monkeypatch,
-    tmp_path,
-):
+
+def test_model_size_mb_sums_all_artifact_files(monkeypatch, tmp_path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     (model_dir / "model.pkl").write_bytes(b"a" * 1024)
@@ -183,6 +185,7 @@ def test_model_size_mb_sums_all_artifact_files(
     size = model_size_mb("run-123")
 
     assert size == pytest.approx(3072 / (1024 * 1024))
+
 
 def test_load_champion_metrics_returns_none_without_alias(monkeypatch):
     class FakeClient:
@@ -223,3 +226,49 @@ def test_load_champion_metrics_reads_test_pr_auc(monkeypatch):
     )
 
     assert load_champion_metrics() == {"pr_auc": 0.82}
+
+
+def test_load_metrics_reads_best_model_report(tmp_path):
+    report = {
+        "name": "lightgbm_none",
+        "metrics": {
+            "test_recall": 0.733,
+            "test_recall_at_p80": 0.773,
+            "test_pr_auc": 0.796,
+            "latency_p95_ms": 17.7,
+            "model_mb": 0.82,
+        },
+    }
+    path = tmp_path / "best_model.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+
+    candidate = load_metrics(path)
+    passed, reasons = passes_gate(candidate, champion=None)
+
+    assert candidate == {
+        "recall_at_p80": 0.773,
+        "pr_auc": 0.796,
+        "p95_ms": 17.7,
+        "model_mb": 0.82,
+    }
+    assert passed is True
+    assert reasons == []
+
+
+def test_old_recall_cannot_replace_recall_at_p80():
+    candidate = good_candidate()
+    del candidate["recall_at_p80"]
+    candidate["recall"] = 0.99
+
+    passed, reasons = passes_gate(candidate, champion=None)
+
+    assert passed is False
+    assert "missing metric: recall_at_p80" in reasons
+
+
+def test_load_metrics_accepts_flat_metrics(tmp_path):
+    candidate = good_candidate()
+    path = tmp_path / "candidate.json"
+    path.write_text(json.dumps(candidate), encoding="utf-8")
+
+    assert load_metrics(path) == candidate
