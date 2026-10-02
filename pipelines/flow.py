@@ -10,13 +10,14 @@ from prefect import flow, task
 from fraud.config import ROOT, load_params
 from fraud.data import file_hash, load_raw, time_split
 from fraud.gate import (
+    candidate_from_best_model,
     load_champion_metrics,
     model_size_mb,
     passes_gate,
     promote_to_champion,
     register_challenger,
 )
-from fraud.train import EXPERIMENTS_BY_NAME, run_experiment
+from fraud.train import EXPERIMENTS, run_all, select_best, write_reports
 from fraud.validate import validate_raw
 
 
@@ -43,25 +44,27 @@ def train(
     test_df,
     data_version,
 ) -> tuple[str, dict]:
-    result, _ = run_experiment(
-        exp=EXPERIMENTS_BY_NAME["xgboost_class_weight"],
+    """รันการทดลอง เลือกโมเดลจาก validation และส่ง test metrics เข้า Gate."""
+    results = run_all(
+        experiments=EXPERIMENTS,
         train_df=train_df,
         val_df=val_df,
         test_df=test_df,
         data_version=data_version,
+        n_boot=200,
     )
 
-    run_id = result["run_id"]
+    best = select_best(results)
+    write_reports(results, best)
+
+    if best is None:
+        raise RuntimeError("training did not produce an eligible model")
+
+    run_id = best["run_id"]
     if not run_id:
         raise RuntimeError("training did not create an MLflow run")
 
-    metrics = result["metrics"]
-    candidate_metrics = {
-        "recall": metrics["test_recall"],
-        "pr_auc": metrics["test_pr_auc"],
-        "p95_ms": metrics["latency_p95_ms"],
-        "model_mb": metrics["model_mb"],
-    }
+    candidate_metrics = candidate_from_best_model(best)
 
     return run_id, candidate_metrics
 
