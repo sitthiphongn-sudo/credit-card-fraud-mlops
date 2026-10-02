@@ -6,46 +6,93 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  OMP_NUM_THREADS: "2"
+  LOKY_MAX_CPU_COUNT: "2"
+
 jobs:
   code-quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
-      - run: pip install -r requirements.txt && pip install -e .
+      - run: python -m pip install -r requirements.txt && python -m pip install -e .
       - name: Lint
         run: ruff check .
+      - name: Require exact versions for all direct dependencies
+        run: python scripts/ci_checks.py check-requirements
       - name: Unit tests
-        run: pytest -q
-        env:
-          PYTHONPATH: .
+        run: pytest -q --junitxml=reports/ci/unit-tests.xml
+      - name: Write code quality summary
+        if: always()
+        run: python scripts/ci_checks.py summary --job-status "${{ job.status }}"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality
+          path: reports/ci/
+          if-no-files-found: warn
 
   data-validation:
     needs: code-quality
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
-      - run: pip install -r requirements.txt && pip install -e .
-      - name: Validate sample data
-        shell: bash
-        run: |
-          python -m fraud.validate data/sample/valid.csv
-
-          for file in data/sample/bad_*.csv; do
-            status=0
-            python -m fraud.validate "$file" || status=$?
-            if [ "$status" -ne 1 ]; then
-              echo "Expected exit 1 for $file, got $status"
-              exit 1
-            fi
-          done
+      - run: python -m pip install -r requirements.txt && python -m pip install -e .
+      - name: Validate good sample and reject all five bad samples (exact exit codes)
+        run: python scripts/ci_checks.py validate-samples
+      - name: Write validation summary
+        if: always()
+        run: python scripts/ci_checks.py summary --job-status "${{ job.status }}"
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-validation
+          path: reports/ci/
+          if-no-files-found: warn
 
   model-gate:
     needs: data-validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: echo "TODO(กันตพัฒน์/ธรรมรักษ์) เทรนบน sample แล้วรัน gate — fail ถ้าไม่ผ่านเกณฑ์"
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: python -m pip install -r requirements.txt && python -m pip install -e .
+      - name: Clear previous splits and reports to prevent stale candidate reuse
+        run: |
+          mkdir -p reports/ci
+          rm -f data/processed/{train,val,test}.csv data/processed/data_version.json
+          rm -f reports/experiments/{best_model.json,experiments.csv,experiments.md}
+      - name: Generate reproducible synthetic CI data (20000 rows, 2% fraud)
+        run: python scripts/make_ci_data.py
+      - name: Train existing LightGBM experiment without MLflow
+        shell: bash
+        run: python -m fraud.train --only lightgbm_none --no-mlflow --bootstrap 0 2>&1 | tee reports/ci/train.log
+      - name: Check trained candidate and reject low-recall control
+        run: python scripts/ci_checks.py model-gate
+      - name: Write model summary
+        if: always()
+        run: python scripts/ci_checks.py summary --job-status "${{ job.status }}"
+      - name: Upload model evidence (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-gate
+          path: |
+            reports/ci/
+            reports/experiments/
+            data/processed/data_version.json
+          if-no-files-found: warn
