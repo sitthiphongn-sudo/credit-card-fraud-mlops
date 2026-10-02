@@ -23,3 +23,4 @@
 | 2026-09-29 | ธรรมรักษ์ | Codex | ช่วยเพิ่มการโหลด metrics ของ champion จาก MLflow เพื่อเปรียบเทียบกับ candidate ก่อนเลื่อน alias พร้อม unit tests | `src/fraud/gate.py`, `pipelines/flow.py`, `tests/test_gate.py`, `tests/test_flow.py` |
 
 | 2026-10-01 | ธรรมรักษ์ | Codex | ช่วยออกแบบการรับสัญญาณ RETRAIN เพื่อเรียก Prefect training pipeline เพิ่มคำสั่ง Makefile เอกสาร และ unit tests โดยจำลองการเรียก DAG ไม่ให้เทรนจริง | `pipelines/flow.py`, `tests/test_flow.py`, `Makefile`, `README.md`, `docs/model_release.md` |
+| 2026-10-02 | นาคินทร์ | Claude | ร่าง AI Project Canvas ครบทุกช่อง (ปัญหาและผู้ใช้, ผลเสียเมื่อทายผิด, ทำไมต้องใช้ ML, ตัวชี้วัด, ข้อมูลและ drift, ความเร็ว, การย้อนกลับ, ข้อจำกัด) และช่วยตรวจตัวเลขให้ตรงกับ best_model.json และผลการทดลองใน reports/experiments/ | `docs/ai_project_canvas.md` |
