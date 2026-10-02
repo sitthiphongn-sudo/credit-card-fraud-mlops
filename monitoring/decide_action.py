@@ -8,27 +8,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from common import DEFAULT_REPORT_DIR, load_params, monitoring_params, read_json, write_json
+from common import (
+    DEFAULT_REPORT_DIR,
+    contract_test_recall,
+    load_model_contract,
+    load_params,
+    monitoring_params,
+    read_json,
+    write_json,
+)
 
 EXIT_CODES = {"OK": 0, "WATCH": 1, "RETRAIN": 2}
 PERIOD_ORDER = ["period_1", "period_2", "period_3", "period_4"]
 
 
-def baseline_recall(nanny_summary: dict[str, Any]) -> float | None:
-    """Prefer test recall from the model hand-off, then fall back to healthy windows."""
-    contract_value = nanny_summary.get("contract_test_recall")
-    if contract_value is not None:
-        return float(contract_value)
+def baseline_recall(evidently_summary: dict[str, Any]) -> float | None:
+    """Prefer approved test recall, then fall back to healthy monitoring windows."""
+    try:
+        contract = load_model_contract()
+        value = contract_test_recall(contract)
+        if value is not None:
+            return value
+    except (FileNotFoundError, KeyError, TypeError, ValueError):
+        pass
 
-    reference_value = nanny_summary.get("reference_actual_recall")
-    if reference_value is not None:
-        return float(reference_value)
-
-    periods = nanny_summary["periods"]
+    periods = evidently_summary.get("periods", {})
     values = [
         float(periods[name]["actual_recall"])
         for name in ("period_1", "period_2")
-        if periods[name].get("actual_recall") is not None
+        if isinstance(periods.get(name), dict)
+        and periods[name].get("actual_recall") is not None
     ]
     return sum(values) / len(values) if values else None
 
@@ -36,18 +45,16 @@ def baseline_recall(nanny_summary: dict[str, Any]) -> float | None:
 def decide_period(
     period: str,
     evidently: dict[str, Any],
-    nanny: dict[str, Any],
     *,
     drift_threshold: float,
     max_recall_drop: float,
     concept_gap_threshold: float,
     normal_recall: float | None,
+    estimated_recall: float | None,
 ) -> dict[str, Any]:
-    """Apply team-approved thresholds and avoid treating undefined recall as zero."""
+    """Apply monitoring thresholds without treating unavailable metrics as zero."""
     drift_share = float(evidently["drift_share"])
-    estimated_value = nanny.get("estimated_recall")
-    actual_value = nanny.get("actual_recall")
-    estimated_recall = float(estimated_value) if estimated_value is not None else None
+    actual_value = evidently.get("actual_recall")
     actual_recall = float(actual_value) if actual_value is not None else None
 
     concept_gap = (
@@ -61,25 +68,31 @@ def decide_period(
         else None
     )
 
-    reasons: list[str] = []
-    if concept_gap is not None and concept_gap > concept_gap_threshold:
-        reasons.append("estimated-vs-actual recall gap exceeds concept_gap")
-    if recall_drop is not None and recall_drop > max_recall_drop:
-        reasons.append("actual recall dropped more than max_recall_drop from normal baseline")
+    retrain_reasons: list[str] = []
+    watch_reasons: list[str] = []
 
-    if reasons:
+    if concept_gap is not None and concept_gap >= concept_gap_threshold:
+        retrain_reasons.append("estimated-vs-actual recall gap reached concept_gap")
+    if recall_drop is not None and recall_drop >= max_recall_drop:
+        retrain_reasons.append("actual recall drop reached max_recall_drop")
+
+    if retrain_reasons:
         action = "RETRAIN"
-    elif drift_share > drift_threshold:
+        reasons = retrain_reasons
+    elif drift_share >= drift_threshold:
         action = "WATCH"
-        reasons.append("feature drift share exceeds drift_share")
+        watch_reasons.append("feature drift share reached drift_share")
+        reasons = watch_reasons
     else:
         action = "OK"
-        reasons.append("drift and available model-quality evidence are within agreed thresholds")
+        reasons = ["drift and available model-quality evidence are within thresholds"]
 
+    if estimated_recall is None:
+        reasons.append("CBPE estimate unavailable; decision used realized recall when labels exist")
     if actual_recall is None:
         reasons.append("actual recall unavailable because this window has no positive fraud labels")
     if normal_recall is None:
-        reasons.append("normal recall baseline unavailable until positive labeled fraud examples arrive")
+        reasons.append("normal recall baseline unavailable")
 
     return {
         "period": period,
@@ -96,7 +109,7 @@ def decide_period(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Return OK, WATCH or RETRAIN for one monitoring period.")
+    parser = argparse.ArgumentParser(description="Return OK, WATCH or RETRAIN for one period.")
     parser.add_argument("--period", choices=PERIOD_ORDER, default="period_4")
     parser.add_argument(
         "--evidently-summary",
@@ -120,17 +133,24 @@ def main() -> None:
     args = parse_args()
     thresholds = monitoring_params(load_params())
     evidently_summary = read_json(args.evidently_summary)
-    nanny_summary = read_json(args.nannyml_summary)
-    normal_recall = baseline_recall(nanny_summary)
+    normal_recall = baseline_recall(evidently_summary)
+
+    estimated_recall = None
+    if args.nannyml_summary.exists():
+        nanny_summary = read_json(args.nannyml_summary)
+        period_data = nanny_summary.get("periods", {}).get(args.period, {})
+        value = period_data.get("estimated_recall") if isinstance(period_data, dict) else None
+        if value is not None:
+            estimated_recall = float(value)
 
     decision = decide_period(
         args.period,
         evidently_summary["periods"][args.period],
-        nanny_summary["periods"][args.period],
         drift_threshold=float(thresholds["drift_share"]),
         max_recall_drop=float(thresholds["max_recall_drop"]),
         concept_gap_threshold=float(thresholds["concept_gap"]),
         normal_recall=normal_recall,
+        estimated_recall=estimated_recall,
     )
     decision["last_run_timestamp"] = datetime.now(timezone.utc).timestamp()
     decision["thresholds"] = {

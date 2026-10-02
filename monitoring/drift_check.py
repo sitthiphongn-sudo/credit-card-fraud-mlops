@@ -1,6 +1,8 @@
 """Run the complete monitoring check for one production-drift scenario.
 
 Examples:
+    python monitoring/drift_check.py --scenario normal1
+    python monitoring/drift_check.py --scenario normal2
     python monitoring/drift_check.py --scenario data
     python monitoring/drift_check.py --scenario concept
 
@@ -40,12 +42,32 @@ SCENARIO_TO_PERIOD = {
 }
 
 
-def run_command(command: list[str]) -> None:
-    """Run one monitoring stage and stop immediately if it fails."""
+def run_required(command: list[str]) -> None:
+    """Run a required monitoring stage and stop immediately if it fails."""
     print("+", " ".join(command))
     completed = subprocess.run(command, cwd=ROOT, check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
+
+
+def run_optional_nannyml(period_dir: Path) -> bool:
+    """Run CBPE when NannyML is available; otherwise continue with labeled evidence."""
+    command = [
+        sys.executable,
+        str(ROOT / "monitoring" / "run_nannyml.py"),
+        "--period-dir",
+        str(period_dir),
+    ]
+    print("+", " ".join(command))
+    completed = subprocess.run(command, cwd=ROOT, check=False)
+    if completed.returncode == 0:
+        return True
+
+    print(
+        "WARNING: NannyML CBPE was not produced. "
+        "Continuing with Evidently and realized recall only."
+    )
+    return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,7 +76,7 @@ def parse_args() -> argparse.Namespace:
         "--scenario",
         choices=SCENARIO_TO_PERIOD,
         required=True,
-        help="normal1/normal2 should stay quiet; data and concept inject different drift types.",
+        help="normal1/normal2 should stay quiet; data/concept inject different drift types.",
     )
     parser.add_argument("--source", type=Path, default=DEFAULT_TEST_PATH)
     parser.add_argument("--reference", type=Path, default=DEFAULT_TRAIN_PATH)
@@ -64,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reuse existing generated period CSV files instead of recreating them.",
     )
+    parser.add_argument(
+        "--skip-nannyml",
+        action="store_true",
+        help="Skip optional CBPE while the team dependency is unresolved.",
+    )
     return parser.parse_args()
 
 
@@ -71,7 +98,7 @@ def main() -> None:
     args = parse_args()
 
     if not args.skip_simulate:
-        run_command(
+        run_required(
             [
                 sys.executable,
                 str(ROOT / "monitoring" / "simulate_drift.py"),
@@ -82,7 +109,7 @@ def main() -> None:
             ]
         )
 
-    run_command(
+    run_required(
         [
             sys.executable,
             str(ROOT / "monitoring" / "run_evidently.py"),
@@ -92,38 +119,42 @@ def main() -> None:
             str(args.reference),
         ]
     )
-    run_command(
-        [
-            sys.executable,
-            str(ROOT / "monitoring" / "run_nannyml.py"),
-            "--period-dir",
-            str(args.period_dir),
-        ]
-    )
+
+    nanny_available = False
+    if not args.skip_nannyml:
+        nanny_available = run_optional_nannyml(args.period_dir)
 
     thresholds = monitoring_params(load_params())
     evidently_summary = read_json(DEFAULT_REPORT_DIR / "evidently_summary.json")
-    nanny_summary = read_json(DEFAULT_REPORT_DIR / "nannyml_summary.json")
-
     period = SCENARIO_TO_PERIOD[args.scenario]
-    normal_recall = baseline_recall(nanny_summary)
+    normal_recall = baseline_recall(evidently_summary)
+
+    estimated_recall = None
+    nanny_summary_path = DEFAULT_REPORT_DIR / "nannyml_summary.json"
+    if nanny_available and nanny_summary_path.exists():
+        nanny_summary = read_json(nanny_summary_path)
+        nanny_period = nanny_summary.get("periods", {}).get(period, {})
+        value = nanny_period.get("estimated_recall") if isinstance(nanny_period, dict) else None
+        if value is not None:
+            estimated_recall = float(value)
+
+    evidently_period = evidently_summary["periods"][period]
     decision = decide_period(
         period,
-        evidently_summary["periods"][period],
-        nanny_summary["periods"][period],
+        evidently_period,
         drift_threshold=float(thresholds["drift_share"]),
         max_recall_drop=float(thresholds["max_recall_drop"]),
         concept_gap_threshold=float(thresholds["concept_gap"]),
         normal_recall=normal_recall,
+        estimated_recall=estimated_recall,
     )
-
-    evidently_period = evidently_summary["periods"][period]
     decision.update(
         {
             "scenario": args.scenario,
             "actual_precision": evidently_period.get("actual_precision"),
             "drifted_features": evidently_period.get("drifted_features", []),
             "prediction_ratios": evidently_period.get("prediction_ratios", {}),
+            "nannyml_available": nanny_available,
             "last_run_timestamp": datetime.now(timezone.utc).timestamp(),
             "thresholds": {
                 "drift_share": float(thresholds["drift_share"]),

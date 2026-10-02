@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-import joblib
+import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import yaml
+from mlflow import MlflowClient
 from sklearn.metrics import precision_score, recall_score
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "configs" / "params.yaml"
 BEST_MODEL_PATH = ROOT / "reports" / "experiments" / "best_model.json"
-DEFAULT_MODEL_PATH = ROOT / "models_cache" / "champion_model" / "model.pkl"
 DEFAULT_PERIOD_DIR = ROOT / "monitoring" / "generated"
 DEFAULT_REPORT_DIR = ROOT / "reports" / "monitoring"
 DEFAULT_TRAIN_PATH = ROOT / "data" / "processed" / "train.csv"
@@ -42,16 +41,60 @@ def load_params(path: Path = CONFIG_PATH) -> dict[str, Any]:
 
 
 def monitoring_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Return monitoring thresholds already agreed by the team."""
+    """Return monitoring thresholds required by the monitoring subsystem."""
     values = params.get("monitoring")
     if not isinstance(values, dict):
         raise ValueError("Missing 'monitoring' section in configs/params.yaml")
 
-    required = {"drift_share", "max_recall_drop", "concept_gap"}
+    required = {
+        "drift_share",
+        "max_recall_drop",
+        "concept_gap",
+        "max_error_rate",
+        "stale_after_seconds",
+    }
     missing = required - values.keys()
     if missing:
         raise ValueError(f"Missing monitoring parameters: {', '.join(sorted(missing))}")
     return values
+
+
+def simulation_params(params: dict[str, Any]) -> dict[str, float]:
+    """Return and validate parameters used to inject synthetic drift."""
+    monitoring = monitoring_params(params)
+    values = monitoring.get("simulation")
+    if not isinstance(values, dict):
+        raise ValueError("Missing 'monitoring.simulation' section in configs/params.yaml")
+
+    required = {
+        "amount_multiplier",
+        "v14_shift_mean",
+        "v17_shift_mean",
+        "shift_std",
+        "small_amount_quantile",
+        "concept_flip_share",
+    }
+    missing = required - values.keys()
+    if missing:
+        raise ValueError(f"Missing simulation parameters: {', '.join(sorted(missing))}")
+
+    result: dict[str, float] = {}
+    for key in required:
+        value = values[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"monitoring.simulation.{key} must be numeric")
+        result[key] = float(value)
+
+    if result["amount_multiplier"] <= 0:
+        raise ValueError("amount_multiplier must be greater than 0")
+    if result["shift_std"] < 0:
+        raise ValueError("shift_std must be greater than or equal to 0")
+    if not 0.0 < result["small_amount_quantile"] < 1.0:
+        raise ValueError("small_amount_quantile must be between 0 and 1")
+    if not 0.0 <= result["concept_flip_share"] <= 1.0:
+        raise ValueError("concept_flip_share must be between 0 and 1")
+
+    return result
 
 
 def load_frame(path: Path) -> pd.DataFrame:
@@ -67,25 +110,44 @@ def load_frame(path: Path) -> pd.DataFrame:
     return frame
 
 
-def load_model(path: Path = DEFAULT_MODEL_PATH):
-    """Load the cached champion sklearn pipeline used by the project."""
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Champion model not found: {path}. Register/cache the champion before monitoring."
+def load_champion() -> tuple[Any, float, str]:
+    """Load the current champion model and its threshold from MLflow Registry."""
+    params = load_params()
+    registry = params.get("registry")
+    if not isinstance(registry, dict):
+        raise ValueError("Missing 'registry' section in configs/params.yaml")
+
+    model_name = registry.get("model_name")
+    alias = registry.get("champion_alias")
+    if not isinstance(model_name, str) or not model_name:
+        raise ValueError("registry.model_name must be a non-empty string")
+    if not isinstance(alias, str) or not alias:
+        raise ValueError("registry.champion_alias must be a non-empty string")
+
+    client = MlflowClient()
+    model_version = client.get_model_version_by_alias(model_name, alias)
+    run = client.get_run(model_version.run_id)
+
+    threshold_value = run.data.params.get("threshold")
+    if threshold_value is None:
+        raise ValueError(
+            f"Champion run {model_version.run_id} does not contain the threshold parameter"
         )
 
-    src_path = str(ROOT / "src")
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    threshold = float(threshold_value)
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(f"Champion threshold must be between 0 and 1, got {threshold}")
 
-    model = joblib.load(path)
+    model_uri = f"models:/{model_name}@{alias}"
+    model = mlflow.sklearn.load_model(model_uri)
     if not hasattr(model, "predict_proba"):
         raise TypeError("Champion model must provide predict_proba()")
-    return model
+
+    return model, threshold, str(model_version.version)
 
 
 def load_model_contract(path: Path = BEST_MODEL_PATH) -> dict[str, Any]:
-    """Load the team hand-off file containing champion threshold and test metrics."""
+    """Load the model hand-off file containing baseline metrics."""
     contract = read_json(path)
     if "threshold" not in contract:
         raise ValueError(f"Missing 'threshold' in model hand-off file: {path}")
@@ -93,7 +155,7 @@ def load_model_contract(path: Path = BEST_MODEL_PATH) -> dict[str, Any]:
 
 
 def model_threshold(contract: dict[str, Any]) -> float:
-    """Read and validate the classification threshold selected by the model owner."""
+    """Read and validate the threshold stored in the model hand-off file."""
     threshold = float(contract["threshold"])
     if not 0.0 <= threshold <= 1.0:
         raise ValueError(f"Model threshold must be between 0 and 1, got {threshold}")
@@ -101,7 +163,7 @@ def model_threshold(contract: dict[str, Any]) -> float:
 
 
 def contract_test_recall(contract: dict[str, Any]) -> float | None:
-    """Return test recall at the selected threshold when the hand-off contains it."""
+    """Return test recall at the selected threshold when available."""
     metrics = contract.get("metrics")
     if not isinstance(metrics, dict):
         return None
@@ -112,8 +174,8 @@ def contract_test_recall(contract: dict[str, Any]) -> float | None:
     return float(value)
 
 
-def add_predictions(frame: pd.DataFrame, model, threshold: float) -> pd.DataFrame:
-    """Append probability and thresholded prediction without modifying the input frame."""
+def add_predictions(frame: pd.DataFrame, model: Any, threshold: float) -> pd.DataFrame:
+    """Append fraud probability and thresholded prediction to a copy of the frame."""
     missing = set(FEATURE_COLUMNS) - set(frame.columns)
     if missing:
         raise ValueError(f"Missing model features: {', '.join(sorted(missing))}")
@@ -152,7 +214,8 @@ def actual_precision(frame: pd.DataFrame) -> float | None:
     predicted = frame[PREDICTION_COLUMN].astype(int)
     if not (predicted == 1).any():
         return None
-    return float(precision_score(frame[TARGET_COLUMN].astype(int), predicted, zero_division=0))
+    actual = frame[TARGET_COLUMN].astype(int)
+    return float(precision_score(actual, predicted, zero_division=0))
 
 
 def prediction_ratios(frame: pd.DataFrame) -> dict[str, float]:

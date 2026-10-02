@@ -1,4 +1,4 @@
-"""Estimate recall without labels using NannyML CBPE and compare it to realized recall."""
+"""Estimate recall without labels using NannyML CBPE and compare it with realized recall."""
 
 from __future__ import annotations
 
@@ -9,9 +9,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
 from common import (
-    DEFAULT_MODEL_PATH,
     DEFAULT_PERIOD_DIR,
     DEFAULT_REPORT_DIR,
     PREDICTION_COLUMN,
@@ -20,10 +18,9 @@ from common import (
     actual_recall,
     add_predictions,
     contract_test_recall,
+    load_champion,
     load_frame,
-    load_model,
     load_model_contract,
-    model_threshold,
     write_json,
 )
 
@@ -36,13 +33,14 @@ PERIOD_FILES = {
 
 
 def import_nannyml():
-    """Import NannyML lazily and explain the one missing project dependency clearly."""
+    """Import NannyML lazily because the team has not pinned it in requirements yet."""
     try:
         import nannyml as nml
     except ImportError as exc:
         raise RuntimeError(
-            "NannyML is not in requirements.txt yet. Ask the group to approve a compatible "
-            "dependency set first; see monitoring/required_team_changes.md."
+            "NannyML is not installed in the approved project environment. "
+            "The core drift check can continue without CBPE, but CBPE reports require "
+            "a team-approved compatible NannyML dependency."
         ) from exc
     return nml
 
@@ -76,7 +74,10 @@ def metric_value(frame: pd.DataFrame, metric: str) -> float:
             series = pd.to_numeric(frame[column], errors="coerce").dropna()
             if not series.empty:
                 return float(series.iloc[-1])
-    raise RuntimeError(f"Could not find {metric} value in NannyML output columns: {list(frame.columns)}")
+
+    raise RuntimeError(
+        f"Could not find {metric} value in NannyML output columns: {list(frame.columns)}"
+    )
 
 
 def save_plot(figure: Any, path: Path) -> None:
@@ -86,7 +87,7 @@ def save_plot(figure: Any, path: Path) -> None:
 
 
 def run_cbpe(reference: pd.DataFrame, periods: dict[str, pd.DataFrame], report_dir: Path) -> dict:
-    """Fit CBPE on normal labeled reference rows and compare estimates with realized recall."""
+    """Fit CBPE on healthy labeled rows and compare estimates with realized recall."""
     nml = import_nannyml()
     reference_data = nanny_frame(reference)
 
@@ -138,18 +139,16 @@ def run_cbpe(reference: pd.DataFrame, periods: dict[str, pd.DataFrame], report_d
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run NannyML CBPE on simulated production periods.")
+    parser = argparse.ArgumentParser(description="Run NannyML CBPE on simulated periods.")
     parser.add_argument("--period-dir", type=Path, default=DEFAULT_PERIOD_DIR)
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR / "nannyml")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    model = load_model(args.model_path)
+    model, threshold, model_version = load_champion()
     contract = load_model_contract()
-    threshold = model_threshold(contract)
 
     period_frames = {
         period: add_predictions(load_frame(args.period_dir / filename), model, threshold)
@@ -164,6 +163,7 @@ def main() -> None:
     output = {
         "metric": "recall",
         "model_threshold": threshold,
+        "model_version": model_version,
         "contract_test_recall": contract_test_recall(contract),
         "reference_actual_recall": actual_recall(reference),
         "periods": results,

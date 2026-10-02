@@ -6,21 +6,42 @@ import argparse
 import time
 from pathlib import Path
 
+from common import DEFAULT_REPORT_DIR, load_params, monitoring_params, read_json
 from prometheus_client import Gauge, start_http_server
 
-from common import DEFAULT_REPORT_DIR, load_params, monitoring_params, read_json
-
-DRIFT_SHARE = Gauge("fraud_monitor_drift_share", "Share of model features detected as drifted")
-ACTUAL_RECALL = Gauge("fraud_monitor_actual_recall", "Realized fraud recall after labels arrive")
-ESTIMATED_RECALL = Gauge("fraud_monitor_estimated_recall", "NannyML CBPE estimated fraud recall")
-CONCEPT_GAP = Gauge("fraud_monitor_concept_gap", "Estimated recall minus realized recall")
-RECALL_DROP = Gauge("fraud_monitor_recall_drop", "Normal-baseline recall minus realized recall")
+DRIFT_SHARE = Gauge(
+    "fraud_monitor_drift_share",
+    "Share of model features detected as drifted",
+)
+ACTUAL_RECALL = Gauge(
+    "fraud_monitor_actual_recall",
+    "Realized fraud recall after labels arrive",
+)
+ESTIMATED_RECALL = Gauge(
+    "fraud_monitor_estimated_recall",
+    "NannyML CBPE estimated fraud recall",
+)
+CONCEPT_GAP = Gauge(
+    "fraud_monitor_concept_gap",
+    "Estimated recall minus realized recall",
+)
+RECALL_DROP = Gauge(
+    "fraud_monitor_recall_drop",
+    "Normal-baseline recall minus realized recall",
+)
 LAST_RUN = Gauge(
     "fraud_monitor_last_run_timestamp_seconds",
     "Unix timestamp of the latest completed drift monitoring batch",
 )
-ACTION = Gauge("fraud_monitor_action", "One-hot monitoring decision", ["action"])
-DRIFT_THRESHOLD = Gauge("fraud_monitor_drift_share_threshold", "Configured feature drift share threshold")
+ACTION = Gauge(
+    "fraud_monitor_action",
+    "One-hot monitoring decision",
+    ["action"],
+)
+DRIFT_THRESHOLD = Gauge(
+    "fraud_monitor_drift_share_threshold",
+    "Configured feature drift share threshold",
+)
 RECALL_DROP_THRESHOLD = Gauge(
     "fraud_monitor_max_recall_drop_threshold",
     "Configured maximum recall drop before retraining",
@@ -29,7 +50,6 @@ CONCEPT_GAP_THRESHOLD = Gauge(
     "fraud_monitor_concept_gap_threshold",
     "Configured estimated-vs-actual recall gap threshold",
 )
-
 ERROR_RATE_THRESHOLD = Gauge(
     "fraud_monitor_max_error_rate_threshold",
     "Configured maximum serving error rate",
@@ -38,13 +58,17 @@ FRAUD_RATE_THRESHOLD = Gauge(
     "fraud_monitor_max_fraud_prediction_rate_threshold",
     "Configured maximum online fraud prediction share before a spike alert",
 )
+FRAUD_RATE_THRESHOLD_CONFIGURED = Gauge(
+    "fraud_monitor_fraud_prediction_rate_threshold_configured",
+    "1 when max_fraud_prediction_rate has been calibrated and configured",
+)
 STALE_AFTER_SECONDS = Gauge(
     "fraud_monitor_stale_after_seconds",
     "Configured maximum age of monitoring results before they are stale",
 )
 CONFIG_VALID = Gauge(
     "fraud_monitor_config_valid",
-    "1 when monitoring config contains every threshold required by alert rules",
+    "1 when required monitoring configuration is valid",
 )
 P95_SLO_SECONDS = Gauge(
     "fraud_monitor_p95_slo_seconds",
@@ -57,40 +81,43 @@ def set_optional(gauge: Gauge, value) -> None:
     gauge.set(float("nan") if value is None else float(value))
 
 
+def valid_rate(value) -> bool:
+    """Return True for numeric rates in the inclusive range [0, 1]."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and 0.0 <= float(value) <= 1.0
+    )
+
+
 def update_config_metrics() -> None:
-    """Publish thresholds even when no batch summary exists yet."""
+    """Publish alert thresholds even when no batch summary exists yet."""
     params = load_params()
     monitoring = monitoring_params(params)
 
     DRIFT_THRESHOLD.set(float(monitoring["drift_share"]))
     RECALL_DROP_THRESHOLD.set(float(monitoring["max_recall_drop"]))
     CONCEPT_GAP_THRESHOLD.set(float(monitoring["concept_gap"]))
+    ERROR_RATE_THRESHOLD.set(float(monitoring["max_error_rate"]))
+    STALE_AFTER_SECONDS.set(float(monitoring["stale_after_seconds"]))
     P95_SLO_SECONDS.set(float(params["gate"]["max_p95_latency_ms"]) / 1000.0)
 
-    stale_after = monitoring.get("stale_after_seconds")
-    max_error_rate = monitoring.get("max_error_rate")
     max_fraud_rate = monitoring.get("max_fraud_prediction_rate")
-
-    stale_is_valid = (
-        isinstance(stale_after, (int, float))
-        and not isinstance(stale_after, bool)
-        and stale_after > 0
-    )
-    error_rate_is_valid = (
-        isinstance(max_error_rate, (int, float))
-        and not isinstance(max_error_rate, bool)
-        and 0 <= max_error_rate <= 1
-    )
-    fraud_rate_is_valid = (
-        isinstance(max_fraud_rate, (int, float))
-        and not isinstance(max_fraud_rate, bool)
-        and 0 <= max_fraud_rate <= 1
-    )
-
-    STALE_AFTER_SECONDS.set(float(stale_after) if stale_is_valid else float("nan"))
-    ERROR_RATE_THRESHOLD.set(float(max_error_rate) if error_rate_is_valid else float("nan"))
+    fraud_rate_is_valid = valid_rate(max_fraud_rate)
+    FRAUD_RATE_THRESHOLD_CONFIGURED.set(1.0 if fraud_rate_is_valid else 0.0)
     FRAUD_RATE_THRESHOLD.set(float(max_fraud_rate) if fraud_rate_is_valid else float("nan"))
-    CONFIG_VALID.set(float(stale_is_valid and error_rate_is_valid and fraud_rate_is_valid))
+
+    required_rates_valid = all(
+        valid_rate(monitoring[key])
+        for key in ("drift_share", "max_recall_drop", "concept_gap", "max_error_rate")
+    )
+    stale_value = monitoring["stale_after_seconds"]
+    stale_is_valid = (
+        isinstance(stale_value, (int, float))
+        and not isinstance(stale_value, bool)
+        and float(stale_value) > 0
+    )
+    CONFIG_VALID.set(1.0 if required_rates_valid and stale_is_valid else 0.0)
 
 
 def update_batch_metrics(summary_path: Path) -> None:
@@ -110,12 +137,6 @@ def update_batch_metrics(summary_path: Path) -> None:
 
     for action in ("OK", "WATCH", "RETRAIN"):
         ACTION.labels(action=action).set(1.0 if action == selected else 0.0)
-
-
-def update_metrics(summary_path: Path) -> None:
-    """Update config gauges and the latest batch gauges once."""
-    update_config_metrics()
-    update_batch_metrics(summary_path)
 
 
 def parse_args() -> argparse.Namespace:

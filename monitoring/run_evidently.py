@@ -9,10 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from common import (
-    DEFAULT_MODEL_PATH,
-    DEFAULT_TRAIN_PATH,
     DEFAULT_PERIOD_DIR,
     DEFAULT_REPORT_DIR,
+    DEFAULT_TRAIN_PATH,
     FEATURE_COLUMNS,
     PREDICTION_COLUMN,
     PROBABILITY_COLUMN,
@@ -20,11 +19,9 @@ from common import (
     actual_precision,
     actual_recall,
     add_predictions,
+    load_champion,
     load_frame,
-    load_model,
-    load_model_contract,
     load_params,
-    model_threshold,
     monitoring_params,
     prediction_ratios,
     write_json,
@@ -39,19 +36,27 @@ PERIOD_FILES = {
 
 
 def _evidently_imports():
-    """Import pinned Evidently lazily so ordinary lint/tests do not require report execution."""
+    """Import the pinned Evidently package lazily."""
     try:
         from evidently import BinaryClassification, DataDefinition, Dataset, Report
         from evidently.presets import ClassificationPreset, DataDriftPreset
     except ImportError as exc:
         raise RuntimeError(
-            "Evidently is required. Install the project's pinned requirements (evidently==0.7.8)."
+            "Evidently is required. Install requirements.txt (evidently==0.7.8)."
         ) from exc
-    return BinaryClassification, DataDefinition, Dataset, Report, ClassificationPreset, DataDriftPreset
+
+    return (
+        BinaryClassification,
+        DataDefinition,
+        Dataset,
+        Report,
+        ClassificationPreset,
+        DataDriftPreset,
+    )
 
 
 def _find_drift_table(value: Any) -> dict[str, Any] | None:
-    """Find the legacy drift_by_columns shape if Evidently includes it in the snapshot."""
+    """Find the legacy drift_by_columns shape if Evidently includes it."""
     if isinstance(value, dict):
         table = value.get("drift_by_columns")
         if isinstance(table, dict):
@@ -70,11 +75,13 @@ def _find_drift_table(value: Any) -> dict[str, Any] | None:
 
 def _metric_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     metrics = payload.get("metrics", [])
-    return [metric for metric in metrics if isinstance(metric, dict)] if isinstance(metrics, list) else []
+    if not isinstance(metrics, list):
+        return []
+    return [metric for metric in metrics if isinstance(metric, dict)]
 
 
 def _extract_column_from_metric_name(name: str) -> str | None:
-    """Extract the column name from common ValueDrift metric-name formats."""
+    """Extract a column name from common ValueDrift metric-name formats."""
     match = re.search(r"column=['\"]?([^,'\")]+)", name)
     return match.group(1) if match else None
 
@@ -105,7 +112,7 @@ def _failed_drift_features(payload: dict[str, Any], columns: list[str]) -> list[
 
 
 def extract_drift_summary(payload: dict[str, Any], columns: list[str]) -> dict[str, Any]:
-    """Normalize Evidently 0.7 report output into a small stable JSON contract."""
+    """Normalize Evidently output into a small stable JSON contract."""
     drift_table = _find_drift_table(payload)
     if drift_table is not None:
         drifted = sorted(
@@ -143,7 +150,7 @@ def extract_drift_summary(payload: dict[str, Any], columns: list[str]) -> dict[s
     if drifted_count is None or drift_share is None:
         raise RuntimeError(
             "Could not extract drift count/share from Evidently output. "
-            "Keep the generated JSON and inspect its metric names for the pinned Evidently version."
+            "Inspect the generated JSON for the pinned Evidently version."
         )
 
     drifted_features = _failed_drift_features(payload, columns)
@@ -156,7 +163,7 @@ def extract_drift_summary(payload: dict[str, Any], columns: list[str]) -> dict[s
 
 
 def classification_dataset(frame, BinaryClassification, DataDefinition, Dataset):
-    """Map the project columns to Evidently's binary classification schema."""
+    """Map project columns to Evidently's binary-classification schema."""
     definition = DataDefinition(
         numerical_columns=FEATURE_COLUMNS,
         classification=[
@@ -179,28 +186,39 @@ def run_period(
     report_dir: Path,
     drift_threshold: float,
 ) -> dict[str, Any]:
-    """Run both drift and labeled-performance reports for one monitoring period."""
-    BinaryClassification, DataDefinition, Dataset, Report, ClassificationPreset, DataDriftPreset = (
-        _evidently_imports()
-    )
+    """Run drift and labeled-performance reports for one production period."""
+    (
+        BinaryClassification,
+        DataDefinition,
+        Dataset,
+        Report,
+        ClassificationPreset,
+        DataDriftPreset,
+    ) = _evidently_imports()
 
-    drift_columns = FEATURE_COLUMNS
     drift_report = Report(
-        [DataDriftPreset(columns=drift_columns, drift_share=drift_threshold)],
+        [DataDriftPreset(columns=FEATURE_COLUMNS, drift_share=drift_threshold)],
         include_tests=True,
     )
     drift_snapshot = drift_report.run(current, reference)
     drift_snapshot.save_html(str(report_dir / f"{name}_drift.html"))
     drift_snapshot.save_json(str(report_dir / f"{name}_drift.json"))
-    drift_summary = extract_drift_summary(drift_snapshot.dict(), drift_columns)
+    drift_summary = extract_drift_summary(drift_snapshot.dict(), FEATURE_COLUMNS)
 
-    current_dataset = classification_dataset(current, BinaryClassification, DataDefinition, Dataset)
-    reference_dataset = classification_dataset(reference, BinaryClassification, DataDefinition, Dataset)
-    performance_report = Report([ClassificationPreset(include_tests=False)])
-    performance_snapshot = performance_report.run(
-        current_dataset,
-        reference_dataset,
+    current_dataset = classification_dataset(
+        current,
+        BinaryClassification,
+        DataDefinition,
+        Dataset,
     )
+    reference_dataset = classification_dataset(
+        reference,
+        BinaryClassification,
+        DataDefinition,
+        Dataset,
+    )
+    performance_report = Report([ClassificationPreset(include_tests=False)])
+    performance_snapshot = performance_report.run(current_dataset, reference_dataset)
     performance_snapshot.save_html(str(report_dir / f"{name}_performance.html"))
     performance_snapshot.save_json(str(report_dir / f"{name}_performance.json"))
 
@@ -222,7 +240,6 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_TRAIN_PATH,
         help="Reference CSV from model development; defaults to data/processed/train.csv.",
     )
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR / "evidently")
     return parser.parse_args()
 
@@ -230,23 +247,22 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     params = load_params()
-    threshold = float(monitoring_params(params)["drift_share"])
-    model = load_model(args.model_path)
-    contract = load_model_contract()
-    threshold_model = model_threshold(contract)
+    drift_threshold = float(monitoring_params(params)["drift_share"])
+    model, model_threshold, model_version = load_champion()
 
     reference_path = args.reference
     if not reference_path.exists():
         demo_reference = args.period_dir / "reference.csv"
         if demo_reference.exists():
             print(
-                f"WARNING: {reference_path} is missing; using {demo_reference} for local demo only."
+                f"WARNING: {reference_path} is missing; using {demo_reference} "
+                "for a local smoke test only."
             )
             reference_path = demo_reference
         else:
             raise FileNotFoundError(f"Reference data not found: {reference_path}")
 
-    reference = add_predictions(load_frame(reference_path), model, threshold_model)
+    reference = add_predictions(load_frame(reference_path), model, model_threshold)
     args.report_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, Any] = {}
@@ -254,7 +270,7 @@ def main() -> None:
         current = add_predictions(
             load_frame(args.period_dir / filename),
             model,
-            threshold_model,
+            model_threshold,
         )
         print(f"Running Evidently for {period}...")
         results[period] = run_period(
@@ -262,12 +278,13 @@ def main() -> None:
             current,
             reference,
             report_dir=args.report_dir,
-            drift_threshold=threshold,
+            drift_threshold=drift_threshold,
         )
 
     output = {
-        "drift_threshold": threshold,
-        "model_threshold": threshold_model,
+        "drift_threshold": drift_threshold,
+        "model_threshold": model_threshold,
+        "model_version": model_version,
         "reference_path": str(reference_path),
         "periods": results,
     }

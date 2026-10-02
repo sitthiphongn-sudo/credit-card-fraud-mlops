@@ -4,7 +4,7 @@ Owner: Chotikan
 
 Period 1-2: normal data.
 Period 3: data drift by changing Amount, V14 and V17 only.
-Period 4: concept drift by keeping X unchanged and flipping labels for a small-amount segment.
+Period 4: concept drift by keeping X unchanged and flipping labels for a low-amount segment.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from common import (
     DEFAULT_PERIOD_DIR,
     FEATURE_COLUMNS,
@@ -22,27 +21,29 @@ from common import (
     TARGET_COLUMN,
     load_frame,
     load_params,
+    simulation_params,
     write_json,
 )
 
-# These values control the *simulation severity*, not production alert thresholds.
-# They are kept in one place and are also written to simulation_summary.json for auditability.
-AMOUNT_MULTIPLIER = 1.8
-SHIFT_MEAN = 1.5
-SHIFT_STD = 0.3
-SMALL_AMOUNT_QUANTILE = 0.25
-CONCEPT_FLIP_SHARE = 0.05
 NUMBER_OF_PERIODS = 4
 
 
-def data_drift(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+def data_drift(
+    df: pd.DataFrame,
+    *,
+    seed: int,
+    amount_multiplier: float,
+    v14_shift_mean: float,
+    v17_shift_mean: float,
+    shift_std: float,
+) -> pd.DataFrame:
     """Change feature distributions while preserving labels exactly."""
     out = df.copy()
     rng = np.random.default_rng(seed)
 
-    out["Amount"] = out["Amount"] * AMOUNT_MULTIPLIER
-    out["V14"] = out["V14"] + rng.normal(SHIFT_MEAN, SHIFT_STD, len(out))
-    out["V17"] = out["V17"] + rng.normal(SHIFT_MEAN, SHIFT_STD, len(out))
+    out["Amount"] = out["Amount"] * amount_multiplier
+    out["V14"] = out["V14"] + rng.normal(v14_shift_mean, shift_std, len(out))
+    out["V17"] = out["V17"] + rng.normal(v17_shift_mean, shift_std, len(out))
     return out
 
 
@@ -51,16 +52,19 @@ def concept_drift(
     *,
     seed: int,
     small_amount_threshold: float,
+    flip_share: float,
 ) -> pd.DataFrame:
-    """Flip some low-amount normal labels to fraud without changing any model feature."""
+    """Flip some low-amount normal labels to fraud without changing model features."""
     out = df.copy()
     eligible = (out["Amount"] <= small_amount_threshold) & (out[TARGET_COLUMN] == 0)
     positions = np.flatnonzero(eligible.to_numpy())
 
     if len(positions) == 0:
         raise ValueError("No eligible low-amount normal rows are available for concept drift")
+    if flip_share == 0:
+        return out
 
-    count = max(1, int(np.ceil(len(positions) * CONCEPT_FLIP_SHARE)))
+    count = max(1, int(np.ceil(len(positions) * flip_share)))
     rng = np.random.default_rng(seed)
     selected = rng.choice(positions, size=count, replace=False)
     class_index = out.columns.get_loc(TARGET_COLUMN)
@@ -91,8 +95,13 @@ def verify_simulation(
     if not period_4_base[FEATURE_COLUMNS].equals(period_4[FEATURE_COLUMNS]):
         raise RuntimeError("Period 4 changed model features; concept drift must keep X unchanged")
 
-    changed_back = ((period_4_base[TARGET_COLUMN] == 1) & (period_4[TARGET_COLUMN] == 0)).sum()
-    changed_to_fraud = ((period_4_base[TARGET_COLUMN] == 0) & (period_4[TARGET_COLUMN] == 1)).sum()
+    changed_back = (
+        (period_4_base[TARGET_COLUMN] == 1) & (period_4[TARGET_COLUMN] == 0)
+    ).sum()
+    changed_to_fraud = (
+        (period_4_base[TARGET_COLUMN] == 0) & (period_4[TARGET_COLUMN] == 1)
+    ).sum()
+
     if changed_back:
         raise RuntimeError("Period 4 changed fraud labels back to normal")
     if not changed_to_fraud:
@@ -106,6 +115,7 @@ def build_summary(
     period_4_base: pd.DataFrame,
     small_amount_threshold: float,
     seed: int,
+    simulation: dict[str, float],
 ) -> dict:
     """Build an audit record showing exactly what was changed."""
     period_3 = periods["period_3_data_drift"]
@@ -118,12 +128,8 @@ def build_summary(
         "source": str(source_path),
         "seed": seed,
         "simulation": {
-            "amount_multiplier": AMOUNT_MULTIPLIER,
-            "v14_v17_shift_mean": SHIFT_MEAN,
-            "v14_v17_shift_std": SHIFT_STD,
-            "small_amount_quantile": SMALL_AMOUNT_QUANTILE,
+            **simulation,
             "small_amount_threshold": small_amount_threshold,
-            "concept_flip_share": CONCEPT_FLIP_SHARE,
         },
         "period_rows": {name: len(frame) for name, frame in periods.items()},
         "period_3_data_drift": {
@@ -133,10 +139,14 @@ def build_summary(
             "v14_mean_after": float(period_3["V14"].mean()),
             "v17_mean_before": float(period_3_base["V17"].mean()),
             "v17_mean_after": float(period_3["V17"].mean()),
-            "labels_changed": int((period_3_base[TARGET_COLUMN] != period_3[TARGET_COLUMN]).sum()),
+            "labels_changed": int(
+                (period_3_base[TARGET_COLUMN] != period_3[TARGET_COLUMN]).sum()
+            ),
         },
         "period_4_concept_drift": {
-            "features_unchanged": bool(period_4_base[FEATURE_COLUMNS].equals(period_4[FEATURE_COLUMNS])),
+            "features_unchanged": bool(
+                period_4_base[FEATURE_COLUMNS].equals(period_4[FEATURE_COLUMNS])
+            ),
             "fraud_rate_before": float(period_4_base[TARGET_COLUMN].mean()),
             "fraud_rate_after": float(period_4[TARGET_COLUMN].mean()),
             "labels_flipped_to_fraud": labels_flipped,
@@ -145,12 +155,13 @@ def build_summary(
 
 
 def resolve_input(requested: Path) -> Path:
-    """Prefer processed test data; use the committed valid sample only for local/demo setup."""
+    """Prefer processed test data; use the committed sample only for a local smoke test."""
     if requested.exists():
         return requested
 
     sample = ROOT / "data" / "sample" / "valid.csv"
-    if requested == ROOT / "data" / "processed" / "test.csv" and sample.exists():
+    expected_test = ROOT / "data" / "processed" / "test.csv"
+    if requested == expected_test and sample.exists():
         print(f"WARNING: {requested} is missing; using demo sample {sample}")
         return sample
     raise FileNotFoundError(f"Input data not found: {requested}")
@@ -171,19 +182,30 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
     params = load_params()
+    simulation = simulation_params(params)
     seed = int(params["seed"]) if args.seed is None else args.seed
+
     input_path = resolve_input(args.input)
     source = load_frame(input_path)
+    small_amount_threshold = float(
+        source["Amount"].quantile(simulation["small_amount_quantile"])
+    )
 
-    small_amount_threshold = float(source["Amount"].quantile(SMALL_AMOUNT_QUANTILE))
     period_1, period_2, period_3_base, period_4_base = split_periods(source)
-    period_3 = data_drift(period_3_base, seed=seed)
+    period_3 = data_drift(
+        period_3_base,
+        seed=seed,
+        amount_multiplier=simulation["amount_multiplier"],
+        v14_shift_mean=simulation["v14_shift_mean"],
+        v17_shift_mean=simulation["v17_shift_mean"],
+        shift_std=simulation["shift_std"],
+    )
     period_4 = concept_drift(
         period_4_base,
         seed=seed,
         small_amount_threshold=small_amount_threshold,
+        flip_share=simulation["concept_flip_share"],
     )
 
     periods = {
@@ -206,6 +228,7 @@ def main() -> None:
         period_4_base,
         small_amount_threshold,
         seed,
+        simulation,
     )
     write_json(args.output_dir / "simulation_summary.json", summary)
 
