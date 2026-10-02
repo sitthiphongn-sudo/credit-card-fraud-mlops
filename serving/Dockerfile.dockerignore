@@ -1,0 +1,22 @@
+# ใช้เฉพาะตอน build ด้วย serving/Dockerfile (BuildKit) — ไม่ส่งข้อมูล/โมเดล/ประวัติ git เข้า build context
+.git
+.github
+.kilo
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+data
+mlruns
+mlflow_data
+mlartifacts
+models_cache
+reports
+docs
+tests
+monitoring
+pipelines
+scripts
+*.egg-info

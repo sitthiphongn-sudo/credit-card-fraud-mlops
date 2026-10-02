@@ -1,0 +1,12 @@
+pytest tests/test_api.py: PASS
+ruff check serving tests/test_api.py: PASS
+Docker Engine: server 29.8.0
+docker build: PASS
+reports/experiments/* ที่ pipeline เขียนทับ ถูก git restore กลับแล้ว (สำเนาอยู่ใน evidence/pipeline_*)
+pipeline (make all ใน container): PASS
+champion: version=1 run_id=825b657c3d4d4de9b673cc11f3d17952 run_name=lightgbm_none threshold=0.51
+container /health=200 /predict normal=200 fraud_example=200 | NaN=400 negAmount=400 text=400 textOnly=400 wrongCount=400
+/metrics families: all 4 present
+load test workers=1 -> reports/serving/load_test_champion.json (SLO exit=0, 0=PASS 1=FAIL 2=not run)
+load test workers=2 -> reports/serving/load_test_champion_workers2.json (SLO exit=0)
+ลบ container ชั่วคราวแล้ว (volume fraud-serving-mlflow ยังเก็บ registry ไว้ ใช้ -SkipPipeline รอบหน้าได้)
