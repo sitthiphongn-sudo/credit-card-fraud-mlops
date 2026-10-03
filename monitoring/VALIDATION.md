@@ -80,3 +80,59 @@ Metric contract ล่าสุด:
 
 Prometheus และ Grafana ใช้ metric contract นี้ในการแสดง System Health,
 Model Health และ alert rules.
+
+## Prometheus target validation
+
+ตรวจ Prometheus Targets แล้วพบว่า service ที่ monitoring ต้องใช้พร้อมทำงานทั้งคู่:
+
+- `fraud-api` = `UP`
+- `fraud-monitoring-batch` = `UP`
+
+จึงยืนยันได้ว่า Prometheus สามารถ scrape ทั้ง API metrics และ batch monitoring metrics ได้สำเร็จ.
+
+## Prometheus alert validation
+
+หลังรัน scenario `concept` พบว่า Prometheus โหลด alert rules ครบและ alert ที่เกี่ยวข้องกับ model degradation ขึ้น `FIRING` ได้แก่:
+
+- `FeatureDriftShareHigh`
+- `RecallDropCritical`
+- `ConceptDriftSuspected`
+
+ขณะที่ `MonitoringConfigInvalid` ยังเป็น `INACTIVE`
+จึงยืนยันว่า monitoring config ใช้งานได้และ alert ตอบสนองต่อ concept drift ตามที่ออกแบบไว้.
+
+## Grafana dashboard validation
+
+ตรวจ dashboard `Credit Card Fraud - System & Model Health` แล้วพบว่าแผงหลักแสดงข้อมูลได้ครบ ได้แก่:
+
+- System Health: p95 latency, error rate, requests
+- Model Health: drift share, estimated vs actual recall, prediction share, fraud score และ monitoring decision
+- Prediction Share ใช้ label `fraud` และ `not_fraud` ตาม metric contract ของ API
+
+หลังแก้ PromQL ของ Prediction Share ให้ใช้ scalar denominator แล้ว pie chart แสดงข้อมูลได้ถูกต้อง.
+
+## End-to-end retraining validation
+
+หลัง scenario `concept` คืน `RETRAIN` และ exit code `2`
+ได้รันคำสั่ง:
+
+`python pipelines/flow.py --signal RETRAIN`
+
+ผลคือ retraining pipeline ทำงานครบจนถึงขั้น release,
+สร้าง `fraud-detector` model version `2`
+และย้าย alias `champion` ไปยัง version `2` สำเร็จ.
+
+จึงยืนยันได้ว่า monitoring signal สามารถเชื่อมต่อไปยัง retraining pipeline
+และ model promotion flow ได้แบบ end-to-end.
+
+## NannyML environment validation
+
+NannyML รันผ่าน environment แยก `.venv-nannyml`
+เพื่อหลีกเลี่ยง dependency conflict กับ environment หลักของโครงการ.
+
+ขั้นตอน monitoring เตรียม input ใน main environment ก่อน
+แล้วให้ `run_nannyml.py` อ่านเฉพาะไฟล์ที่เตรียมไว้สำหรับ CBPE
+โดยไม่ต้องโหลด training stack ทั้งชุด.
+
+แนวทางนี้ช่วยแยก dependency ของ monitoring ออกจาก serving/training
+และลดความเสี่ยงที่การติดตั้ง NannyML จะกระทบ package หลักของระบบ.
