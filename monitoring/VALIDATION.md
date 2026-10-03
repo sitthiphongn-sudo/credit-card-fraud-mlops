@@ -124,3 +124,15 @@ Model Health และ alert rules.
 
 จึงยืนยันได้ว่า monitoring signal สามารถเชื่อมต่อไปยัง retraining pipeline
 และ model promotion flow ได้แบบ end-to-end.
+
+## NannyML environment validation
+
+NannyML รันผ่าน environment แยก `.venv-nannyml`
+เพื่อหลีกเลี่ยง dependency conflict กับ environment หลักของโครงการ.
+
+ขั้นตอน monitoring เตรียม input ใน main environment ก่อน
+แล้วให้ `run_nannyml.py` อ่านเฉพาะไฟล์ที่เตรียมไว้สำหรับ CBPE
+โดยไม่ต้องโหลด training stack ทั้งชุด.
+
+แนวทางนี้ช่วยแยก dependency ของ monitoring ออกจาก serving/training
+และลดความเสี่ยงที่การติดตั้ง NannyML จะกระทบ package หลักของระบบ.
