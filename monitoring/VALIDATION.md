@@ -110,3 +110,17 @@ Model Health และ alert rules.
 - Prediction Share ใช้ label `fraud` และ `not_fraud` ตาม metric contract ของ API
 
 หลังแก้ PromQL ของ Prediction Share ให้ใช้ scalar denominator แล้ว pie chart แสดงข้อมูลได้ถูกต้อง.
+
+## End-to-end retraining validation
+
+หลัง scenario `concept` คืน `RETRAIN` และ exit code `2`
+ได้รันคำสั่ง:
+
+`python pipelines/flow.py --signal RETRAIN`
+
+ผลคือ retraining pipeline ทำงานครบจนถึงขั้น release,
+สร้าง `fraud-detector` model version `2`
+และย้าย alias `champion` ไปยัง version `2` สำเร็จ.
+
+จึงยืนยันได้ว่า monitoring signal สามารถเชื่อมต่อไปยัง retraining pipeline
+และ model promotion flow ได้แบบ end-to-end.
