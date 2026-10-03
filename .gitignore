@@ -15,3 +15,5 @@ reports/*
 .ruff_cache/
 docs/*.docx
 *.egg-info/
+monitoring/generated/*
+!monitoring/generated/.gitkeep
