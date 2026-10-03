@@ -17,3 +17,4 @@ docs/*.docx
 *.egg-info/
 monitoring/generated/*
 !monitoring/generated/.gitkeep
+.venv-nannyml/
