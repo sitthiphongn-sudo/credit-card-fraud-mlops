@@ -100,3 +100,13 @@ Model Health และ alert rules.
 
 ขณะที่ `MonitoringConfigInvalid` ยังเป็น `INACTIVE`
 จึงยืนยันว่า monitoring config ใช้งานได้และ alert ตอบสนองต่อ concept drift ตามที่ออกแบบไว้.
+
+## Grafana dashboard validation
+
+ตรวจ dashboard `Credit Card Fraud - System & Model Health` แล้วพบว่าแผงหลักแสดงข้อมูลได้ครบ ได้แก่:
+
+- System Health: p95 latency, error rate, requests
+- Model Health: drift share, estimated vs actual recall, prediction share, fraud score และ monitoring decision
+- Prediction Share ใช้ label `fraud` และ `not_fraud` ตาม metric contract ของ API
+
+หลังแก้ PromQL ของ Prediction Share ให้ใช้ scalar denominator แล้ว pie chart แสดงข้อมูลได้ถูกต้อง.
