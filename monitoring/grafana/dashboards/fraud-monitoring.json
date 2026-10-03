@@ -217,7 +217,7 @@
     },
     {
       "type": "piechart",
-      "title": "Fraud / Normal Prediction Share",
+      "title": "Fraud / Not Fraud Prediction Share",
       "id": 8,
       "gridPos": {
         "h": 7,
