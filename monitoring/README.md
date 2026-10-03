@@ -39,7 +39,11 @@ python monitoring/simulate_drift.py
 
 ## 2. คำสั่งหลักสำหรับ demo
 
-หลังข้อมูล processed, model hand-off และ NannyML dependency พร้อมแล้ว:
+ก่อนรันต้องมี 3 อย่าง:
+
+1. champion ใน MLflow (รัน pipeline ตาม README หลัก) และตั้ง `MLFLOW_TRACKING_URI` เป็น `http://127.0.0.1:5001`
+2. ข้อมูลที่แบ่งแล้วใน `data/processed/` สร้างด้วย `python -m fraud.data`
+3. environment `.venv-nannyml` ตามข้อ 4 ถ้ายังไม่มี ให้เติม `--skip-nannyml` ท้ายคำสั่ง (ใช้ recall จริงอย่างเดียว)
 
 ```bash
 python monitoring/drift_check.py --scenario normal1
@@ -89,8 +93,26 @@ python monitoring/run_nannyml.py
 CBPE fit จาก healthy Period 1+2 แล้ว estimate recall โดยไม่ใช้ `Class` ของ analysis period. เมื่อ label
 กลับมา PerformanceCalculator/โค้ด realized metric จะเทียบ estimated กับ actual และคำนวณ concept gap.
 
-ก่อนรันต้องให้กลุ่มเพิ่ม NannyML dependency ที่เข้ากับ LightGBM ของโครงการก่อน ดู
-`monitoring/required_team_changes.md`.
+NannyML ไม่รองรับ `lightgbm==4.6.0` ของโครงการ จึงรันใน environment แยก `.venv-nannyml`
+(`run_nannyml.py` อ่านเฉพาะ CSV ที่ `prepare_nannyml_inputs.py` เตรียมไว้ ไม่โหลดโมเดล)
+
+สร้างครั้งเดียว บน Windows PowerShell:
+
+```powershell
+python -m venv .venv-nannyml
+.\.venv-nannyml\Scripts\python -m pip install nannyml==0.13.1
+```
+
+บน Bash:
+
+```bash
+python -m venv .venv-nannyml
+.venv-nannyml/bin/python -m pip install nannyml==0.13.1
+```
+
+`drift_check.py` หา Python ของ environment นี้เองที่ `.venv-nannyml/Scripts/python.exe` (Windows)
+หรือ `.venv-nannyml/bin/python` ระบุที่อื่นได้ด้วย `--nannyml-python <path>`
+ถ้าไม่มี environment นี้ ให้ใช้ `--skip-nannyml`
 
 ## 5. Decision แยกรัน
 
