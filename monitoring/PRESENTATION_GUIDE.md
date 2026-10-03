@@ -52,7 +52,7 @@ Prometheus อาจยังแสดงค่ารอบเก่าแม้
 
 ## Metric contract ที่ควรจำ
 
-- `fraud_requests_total{status=ok|bad_request|error}`
+- `fraud_requests_total{status=success|bad_request|error}`
 - `fraud_request_latency_seconds`
-- `fraud_predictions_total{label=fraud|normal}`
+- `fraud_predictions_total{label=fraud|not_fraud}`
 - `fraud_score`

@@ -1,58 +1,82 @@
-# Monitoring validation notes
+# Monitoring validation (final)
 
-## ตรวจแล้วใน environment นี้
+ตรวจบน main `f3c182a` วันที่ 3 ต.ค. 2569 ด้วย champion model version `1`
+และ model threshold `0.91`.
 
-- `python -m compileall monitoring` — PASS.
-- Python ทุกบรรทัดใน `monitoring/*.py` ไม่เกิน 110 ตัวอักษร — PASS.
-- YAML ของ Prometheus/alerts/Grafana provisioning และ `docker-compose.yml` parse ได้ — PASS.
-- Grafana dashboard JSON parse ได้ — PASS.
-- `simulate_drift.py --input data/sample/valid.csv` — PASS:
-  - Period 3 เปลี่ยน label = 0 แถว
-  - Period 4 features เหมือนเดิมและ flip label เป็น fraud = 8 แถว
-- Decision logic synthetic check — PASS:
-  - healthy -> `OK`
-  - drift only -> `WATCH`
-  - concept/performance drop -> `RETRAIN`
-  - exit code mapping เป็น `0 / 1 / 2`
-- Prometheus exporter อ่าน config ปัจจุบันได้ และตั้ง `fraud_monitor_config_valid=0` ตามที่ตั้งใจ เพราะ shared
-  config ยังไม่มี `max_error_rate`, `max_fraud_prediction_rate`, `stale_after_seconds`.
+## Commands
 
-## สิ่งที่ยังรัน end-to-end ไม่ได้จาก ZIP ปัจจุบัน
+| คำสั่ง | ผล | exit code |
+|---|---|---:|
+| `ruff check .` | All checks passed | 0 |
+| `python -m pytest -q` | 123 passed, 15 warnings | 0 |
+| `python monitoring/drift_check.py --scenario normal1` | OK · drift share 0.0000 | 0 |
+| `python monitoring/drift_check.py --scenario normal2` | OK · drift share 0.0333 | 0 |
+| `python monitoring/drift_check.py --scenario data` | WATCH · drift share 0.1667 · drifted features: Amount, Time, V14, V17, V2 | 1 |
+| `python monitoring/drift_check.py --scenario concept` | RETRAIN · actual recall 0.0284 vs CBPE 0.5694 · concept gap 0.5409 | 2 |
 
-- `reports/experiments/best_model.json` ยังไม่มีใน ZIP นี้. เอกสารกลุ่มระบุว่าจะมาจาก PR ของสิทธิพงษ์ก่อน
-  monitoring merge. Monitoring ต้องใช้ไฟล์นี้เพื่ออ่าน threshold เดียวกับ production.
-- `data/processed/train.csv` และ `test.csv` ยังไม่มี จึงยังทำ report final ที่ใช้ reference/current จริงไม่ได้.
-- Evidently อยู่ใน `requirements.txt` แต่ package ไม่ได้ติดตั้งใน sandbox นี้ จึงยังไม่ได้ execute HTML report จริง.
-- NannyML ยังไม่อยู่ใน `requirements.txt`. `nannyml==0.13.1` รองรับ Python 3.12 แต่ต้องการ
-  `lightgbm>=3.3,<4.6` ขณะที่ project ตรึง `lightgbm==4.6.0`; ต้องให้ทีมแก้ dependency ร่วมกันก่อน.
-- `ruff` อยู่ใน requirements แต่ไม่ได้ติดตั้งใน sandbox และ network ของ container ติดตั้งเพิ่มไม่ได้ จึงตรวจ
-  actual `ruff check .` ไม่ได้ในที่นี่.
-- `pytest -q` ของ repo ปัจจุบันหยุดตอน collect `tests/test_api.py` ด้วย `ModuleNotFoundError: serving`.
-  ปัญหาเดียวกันเกิดกับ untouched repo ที่อัปโหลด จึงไม่ใช่ regression จาก monitoring branch.
-- Serving `/metrics` ใน ZIP เก่ายังไม่ใช่ contract ล่าสุด. ต้องรอสหรัฐ merge metrics สี่ตัวตามเอกสารกลุ่ม.
-- `models_cache/champion_model` ใน ZIP เก่ายังเป็น artifact รุ่นก่อน; เอกสารอัปเดตระบุ champion ใหม่เป็น `lightgbm_none`. อย่าใช้ cache เก่านี้เป็นผล final หลัง PR ใหม่ merge.
+## Monitoring results
 
-## สิ่งที่แก้ตามเอกสารอัปเดต 1 ต.ค. 2569 แล้ว
+### Normal periods
 
-- เพิ่ม command หลัก `monitoring/drift_check.py --scenario data|concept`.
-- RETRAIN ใช้ exit code `2`.
-- prediction label ใช้ probability เทียบ model threshold จาก `best_model.json`; ไม่ใช้ `model.predict()` 0.5.
-- Evidently default reference เป็น `data/processed/train.csv`.
-- Baseline recall พยายามอ่าน `metrics.test_recall` จาก model hand-off ก่อน.
-- Grafana เปลี่ยนไปใช้ `fraud_predictions_total{label=fraud|normal}` และ `fraud_score` ตาม metric contract ใหม่.
-- Alert rules เพิ่ม `HighErrorRate` และ `FraudAlertRateSpike` โดย threshold มาจาก exporter/config ไม่ hardcode.
+- Period 1: drift share = 0.0000
+- Period 1 actual recall = 0.7826
+- Period 1 CBPE estimated recall = 0.7473
+- Period 2: drift share = 0.0333
+- Period 2 actual recall = 0.7667
+- Period 2 CBPE estimated recall = 0.7960
 
-## ก่อนเปิด PR จริง
+ทั้งสองช่วงอยู่ภายใน threshold จึงได้สถานะ `OK`.
 
-หลัง PR ของสิทธิพงษ์, ธรรมรักษ์ และสหรัฐ merge/rebase ตามลำดับ ให้รันใหม่ทั้งหมด:
+### Data drift
 
-```bash
-ruff check .
-pytest -q
-python monitoring/drift_check.py --scenario normal1
-python monitoring/drift_check.py --scenario normal2
-python monitoring/drift_check.py --scenario data
-python monitoring/drift_check.py --scenario concept
-```
+Period 3 ได้สถานะ `WATCH`.
 
-จากนั้นเปิด Prometheus/Grafana และเก็บหลักฐาน normal เงียบ, data drift root cause และ concept drift -> RETRAIN.
+- drift share = 0.1667
+- drifted features = `Amount`, `Time`, `V14`, `V17`, `V2`
+- actual recall = 0.9091
+- CBPE estimated recall = 0.8111
+
+feature distribution เปลี่ยนเกิน `drift_share` แต่ realized recall ไม่ลดลง
+จึงแจ้งเตือนเป็น `WATCH` แทนการ retrain ทันที.
+
+### Concept drift
+
+Period 4 ได้สถานะ `RETRAIN`.
+
+- actual recall = 0.0284
+- CBPE estimated recall = 0.5694
+- recall drop = 0.7316
+- concept gap = 0.5409
+
+ทั้ง recall drop และ estimated-vs-actual recall gap เกิน threshold
+จึงคืน `RETRAIN` และ exit code `2`.
+
+## Config (`configs/params.yaml` ส่วน monitoring)
+
+- `drift_share`: 0.10
+- `max_recall_drop`: 0.10
+- `concept_gap`: 0.10
+- `max_error_rate`: 0.01
+- `stale_after_seconds`: 86400
+
+`max_fraud_prediction_rate` ไม่ได้ตั้งค่า และ alert นี้ถูกปิดไว้เมื่อ threshold ไม่ได้ถูก configure.
+
+## NannyML
+
+NannyML CBPE ใช้ healthy Period 1 และ Period 2 เป็น reference
+และซ่อน analysis labels ระหว่างการ estimate recall.
+
+NannyML รันผ่านด้วย environment แยก `.venv-nannyml`.
+มี warning เรื่องจำนวน chunk ต่ำ แต่ไม่ทำให้การรันล้มเหลว.
+
+## Prometheus / Grafana
+
+Metric contract ล่าสุด:
+
+- `fraud_requests_total{status="success|bad_request|error"}`
+- `fraud_predictions_total{label="fraud|not_fraud"}`
+- `fraud_request_latency_seconds`
+- `fraud_score`
+
+Prometheus และ Grafana ใช้ metric contract นี้ในการแสดง System Health,
+Model Health และ alert rules.
