@@ -1,4 +1,4 @@
-# Python 3.12 — ตรึงเวอร์ชันเพื่อให้รันซ้ำได้ผลเดิม
+# Python 3.12 - pinned versions for reproducible runs
 numpy==2.2.6
 pandas==2.2.3
 scikit-learn==1.6.1

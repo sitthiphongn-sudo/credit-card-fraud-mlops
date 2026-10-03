@@ -232,7 +232,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (label) (rate(fraud_predictions_total[5m])) / clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9)",
+          "expr": "sum by (label) (rate(fraud_predictions_total[5m])) / scalar(clamp_min(sum(rate(fraud_predictions_total[5m])), 1e-9))",
           "legendFormat": "{{label}}"
         }
       ],
@@ -318,6 +318,7 @@
         "overrides": []
       },
       "options": {
+        "textMode": "name",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"

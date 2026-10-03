@@ -100,14 +100,14 @@ NannyML ไม่รองรับ `lightgbm==4.6.0` ของโครงก�
 
 ```powershell
 python -m venv .venv-nannyml
-.\.venv-nannyml\Scripts\python -m pip install nannyml==0.13.1
+.\.venv-nannyml\Scripts\python -m pip install nannyml==0.13.1 statsmodels
 ```
 
 บน Bash:
 
 ```bash
 python -m venv .venv-nannyml
-.venv-nannyml/bin/python -m pip install nannyml==0.13.1
+.venv-nannyml/bin/python -m pip install nannyml==0.13.1 statsmodels
 ```
 
 `drift_check.py` หา Python ของ environment นี้เองที่ `.venv-nannyml/Scripts/python.exe` (Windows)
