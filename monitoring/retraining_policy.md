@@ -13,7 +13,7 @@
 Data drift หมายถึง distribution ของ input เปลี่ยน แต่ไม่ได้แปลว่าคุณภาพโมเดลลดลงเสมอไป
 
 ในการทดสอบ Period 3 พบ feature drift แต่ recall จริงยังอยู่ประมาณ 0.91
-จึงเลือกสถานะ `WATCH` แทน `RETRAIN`
+จึงเลือกสถานะ `WATCH` แทน `RETRAIN` เพราะ input distribution เปลี่ยน แต่ realized recall ยังไม่ลดลงเกิน `max_recall_drop`
 
 การ retrain ทุกครั้งที่ input เปลี่ยนทำให้ใช้ทรัพยากรโดยไม่จำเป็น
 และโมเดลใหม่อาจไม่ได้ดีกว่า champion เดิม
