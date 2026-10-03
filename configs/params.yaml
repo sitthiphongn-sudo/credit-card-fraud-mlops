@@ -16,9 +16,18 @@ gate:
   max_p95_latency_ms: 100
   max_model_mb: 50
 monitoring:
-  drift_share: 0.30
+  drift_share: 0.10
   max_recall_drop: 0.10
   concept_gap: 0.10
+  max_error_rate: 0.01
+  stale_after_seconds: 86400
+  simulation:
+    amount_multiplier: 1.8
+    v14_shift_mean: 1.5
+    v17_shift_mean: 1.5
+    shift_std: 0.3
+    small_amount_quantile: 0.25
+    concept_flip_share: 0.05
 registry:
   model_name: fraud-detector
   champion_alias: champion
