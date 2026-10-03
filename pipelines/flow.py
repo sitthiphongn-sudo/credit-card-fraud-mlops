@@ -1,7 +1,7 @@
 """Prefect DAG ทั้งกระบวนการ — ผู้รับผิดชอบ: ธรรมรักษ์
 
 รัน: make all  (หรือ python pipelines/flow.py)
-TODO(ธรรมรักษ์): evaluate บน test → gate → register → ตั้ง alias
+ขั้นตอน: ingest → check → split → train → register challenger → gate → champion
 """
 import argparse
 
