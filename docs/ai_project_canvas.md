@@ -2,6 +2,7 @@
 
 กลุ่ม 15 The bid · CP413008 Machine Learning Engineering for Production
 
+
 ตัวเลขผลโมเดลทั้งหมดมาจาก `reports/experiments/best_model.json`
 (โมเดล `lightgbm_none` · run `3db9851cb0b64f1e8987cc009d3d49ab` · data version `76274b691b16`)
 
@@ -81,7 +82,7 @@
 
 | กลไก | หน้าที่ |
 |---|---|
-| Gate | ตรวจ gating metric ทุกข้อก่อน register โมเดลใหม่ ไม่ผ่านก็ไม่ขึ้นใช้งาน |
+| Gate | ตรวจ gating metric ทุกข้อก่อนเลื่อนโมเดลใหม่เป็น champion ไม่ผ่านก็ไม่ขึ้นใช้งาน (ยังเก็บไว้เป็น challenger) |
 | Registry alias | API โหลดจาก `models:/fraud-detector@champion` เสมอ เปลี่ยนโมเดลได้โดยไม่แก้โค้ด |
 | Rollback | ย้าย alias `champion` กลับไปเวอร์ชันก่อนหน้า threshold ย้อนตามเองเพราะอ่านจาก run ของ champion |
 
