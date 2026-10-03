@@ -1,7 +1,7 @@
 # Monitoring validation (final)
 
 ตรวจบน main `f3c182a` วันที่ 3 ต.ค. 2569 ด้วย champion model version `1`
-และ model threshold `0.91`.
+และ model threshold `0.51`.
 
 ## Commands
 
