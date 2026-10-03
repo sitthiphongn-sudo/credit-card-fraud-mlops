@@ -80,3 +80,12 @@ Metric contract ล่าสุด:
 
 Prometheus และ Grafana ใช้ metric contract นี้ในการแสดง System Health,
 Model Health และ alert rules.
+
+## Prometheus target validation
+
+ตรวจ Prometheus Targets แล้วพบว่า service ที่ monitoring ต้องใช้พร้อมทำงานทั้งคู่:
+
+- `fraud-api` = `UP`
+- `fraud-monitoring-batch` = `UP`
+
+จึงยืนยันได้ว่า Prometheus สามารถ scrape ทั้ง API metrics และ batch monitoring metrics ได้สำเร็จ.
