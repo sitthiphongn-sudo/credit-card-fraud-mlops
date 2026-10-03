@@ -150,15 +150,14 @@ Grafana queries ใช้ metric contract ของสหรัฐที่ร�
 ## 8. Alert / retraining policy
 
 - Prometheus rules: `monitoring/alert.rules.yml`
-- ตารางอธิบาย: `reports/monitoring/alert_thresholds.md`
-- Retraining policy: `reports/monitoring/retraining_policy.md`
+- ตารางอธิบาย: [alert_thresholds.md](alert_thresholds.md)
+- Retraining policy: [retraining_policy.md](retraining_policy.md)
 
 มี stale-monitoring alert เพื่อไม่ให้ค่ารอบเก่าค้างเป็นสีเขียวเมื่อ batch monitoring ไม่ได้รัน.
 
-## ก่อนเปิด PR
+## ตรวจก่อนเปิด PR
 
-อ่าน `monitoring/required_team_changes.md` ก่อน เพราะยังมี shared dependency/config ที่โชติกานต์แก้เองไม่ได้.
-จากนั้นรัน:
+รัน:
 
 ```bash
 ruff check .
