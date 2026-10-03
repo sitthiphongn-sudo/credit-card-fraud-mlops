@@ -143,9 +143,9 @@ docker compose up -d prometheus grafana
 Dashboard มี 2 แถว:
 
 - System Health: p95 latency, error rate, requests
-- Model Health: drift share, estimated vs actual recall, fraud/normal prediction share, fraud score, decision
+- Model Health: drift share, estimated vs actual recall, fraud/not_fraud prediction share, fraud score, decision
 
-Grafana queries ใช้ metric contract ของสหรัฐที่ระบุด้านบน.
+Grafana queries ใช้ metric contract เดียวกับ API: `fraud_requests_total{status="success|bad_request|error"}` และ `fraud_predictions_total{label="fraud|not_fraud"}`.
 
 ## 8. Alert / retraining policy
 
