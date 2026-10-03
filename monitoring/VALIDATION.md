@@ -89,3 +89,14 @@ Model Health และ alert rules.
 - `fraud-monitoring-batch` = `UP`
 
 จึงยืนยันได้ว่า Prometheus สามารถ scrape ทั้ง API metrics และ batch monitoring metrics ได้สำเร็จ.
+
+## Prometheus alert validation
+
+หลังรัน scenario `concept` พบว่า Prometheus โหลด alert rules ครบและ alert ที่เกี่ยวข้องกับ model degradation ขึ้น `FIRING` ได้แก่:
+
+- `FeatureDriftShareHigh`
+- `RecallDropCritical`
+- `ConceptDriftSuspected`
+
+ขณะที่ `MonitoringConfigInvalid` ยังเป็น `INACTIVE`
+จึงยืนยันว่า monitoring config ใช้งานได้และ alert ตอบสนองต่อ concept drift ตามที่ออกแบบไว้.
