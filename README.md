@@ -260,6 +260,21 @@ make rollback VERSION=1
 [docs/model_release.md](docs/model_release.md)
 
 ### 5. เฝ้าระวัง drift
+Monitoring ใช้ข้อมูลที่แบ่งแล้วใน `data/processed/` และโหลด champion จาก MLflow
+จึงต้องรันใน Terminal ที่ตั้ง `MLFLOW_TRACKING_URI` ไว้แล้ว (ข้อ 2)
+
+สร้างไฟล์ train/validation/test ให้ monitoring ใช้ (รันครั้งเดียวหลัง clone):
+
+```powershell
+python -m fraud.data
+```
+
+ได้ `data/processed/train.csv`, `val.csv`, `test.csv` และ `data_version.json`
+แบ่งตามเวลาแบบเดียวกับ pipeline
+
+NannyML (CBPE) ต้องใช้ environment แยก `.venv-nannyml` เพราะ NannyML ไม่รองรับ
+`lightgbm==4.6.0` ของโครงการ วิธีสร้างดูที่ [monitoring/README.md](monitoring/README.md)
+ถ้ายังไม่ได้สร้าง ให้เติม `--skip-nannyml` ท้ายคำสั่ง จะใช้ recall จริงอย่างเดียว
 
 ```powershell
 python monitoring/drift_check.py --scenario data
