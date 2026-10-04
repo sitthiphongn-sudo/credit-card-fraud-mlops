@@ -1,33 +1,34 @@
 # Fraud Detection MLOps Architecture
 
 ```mermaid
-flowchart LR
-    RAW[Raw credit card data] --> VALIDATE[Schema validation]
-    VALIDATE --> SPLIT[Time-based train / validation / test split]
-    SPLIT --> EXP[Run model experiments]
-    EXP --> SELECT[Select best model using validation]
-    EXP --> TRACK[MLflow runs and artifacts]
-    SELECT --> REPORT[best_model.json and experiment reports]
+flowchart TB
+    subgraph TRAINING["Training pipeline — Prefect"]
+        direction LR
+        DATA["Raw data"] --> CHECK["Validate and<br/>time-based split"]
+        CHECK --> TRAIN["Train experiments<br/>Select by validation"]
+    end
 
-    REPORT --> METRICS[Recall at Precision >= 0.80 / PR-AUC / inference p95 / model size]
-    METRICS --> SIZE[Fill artifact size if missing]
-    SIZE --> CHALLENGER[Register challenger]
-    CHALLENGER --> GATE[Model gate]
-    CURRENT[Current champion metrics] --> GATE
+    subgraph RELEASE["Model release"]
+        direction LR
+        REG["MLflow Registry<br/>Register challenger"] --> GATE["Model Gate<br/>Quality / latency / size"]
+        GATE -->|Pass| CHAMP["Champion alias"]
+        GATE -->|Fail| KEEP["Keep current champion"]
+    end
 
-    GATE -->|Pass| CHAMPION[Set champion alias]
-    GATE -->|Fail| KEEP[Keep current champion and report reasons]
-    CHAMPION --> RESTART[Start or restart API]
-    RESTART --> API[Fraud prediction API]
+    subgraph PRODUCTION["Serving and monitoring"]
+        direction LR
+        API["FastAPI<br/>Model + threshold"] --> METRICS["Prometheus"]
+        METRICS --> DASH["Grafana"]
+        DRIFT["Batch drift monitoring"] --> METRICS
+    end
 
-    API --> LOADTEST[API load test: latency and throughput]
-    API --> PROM[Prometheus API metrics]
-    DRIFT[Batch drift monitoring] --> EXPORTER[Drift exporter]
-    EXPORTER --> PROM
-    PROM --> DASH[Grafana dashboard]
-    DRIFT -->|RETRAIN| RAW
-
-    PREVIOUS[Previous registered version] -->|Rollback alias| CHAMPION
+    TRAIN -->|"Run, model and test metrics"| REG
+    TRAIN --> TRACK["MLflow Tracking<br/>Parameters / metrics / artifacts"]
+    CHAMP -->|"Start or restart API"| API
+    CHAMP -->|"Reference model"| DRIFT
+    DRIFT -->|"RETRAIN"| DATA
+    OLD["Previous model version"] -->|"Rollback alias"| CHAMP
+    LOAD["API load test<br/>p50 / p95 / throughput"] --- API
 ```
 
 ## Release behavior
@@ -56,10 +57,10 @@ Inference p95 ที่ใช้ใน Gate เป็นผลวัดของ
 
 ## Services and storage
 
-- MLflow UI บนเครื่อง: `http://localhost:5001`
-- API: `http://localhost:8000`
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000`
+- MLflow UI บนเครื่อง: http://localhost:5001
+- API: http://localhost:8000
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000
 - API ภายใน Docker เชื่อม MLflow ผ่าน `http://mlflow:5000`
 - MLflow เก็บฐานข้อมูลและ artifacts ใน volume `./mlflow_data:/mlflow`
 - MLflow server รับส่ง artifacts ผ่าน `--artifacts-destination`
