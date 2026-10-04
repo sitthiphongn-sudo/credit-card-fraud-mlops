@@ -28,13 +28,13 @@
 
 | สมาชิก | ส่วนที่รับผิดชอบ | ไฟล์ / โฟลเดอร์หลัก |
 |---|---|---|
-| กันตพัฒน์ โชติเจริญวัฒนะกุล 673380305-2 | หัวหน้ากลุ่ม · Repo & CI/CD | `.github/workflows/ci.yml`, `scripts/make_ci_data.py`, `scripts/ci_checks.py` |
-| เปรมสิริวัฒณ์ วราธิกานนท์ 673380360-4 | Data & Validation | `src/fraud/data.py`, `src/fraud/validate.py`, `data/sample/`, `scripts/eda.py`, `scripts/make_samples.py`, `scripts/schema_stats.py`, `reports/eda.md`, `tests/test_data.py`, `tests/test_validate.py` |
-| นาคินทร์ ประเสริฐยิ่ง 673380324-8 | Feature Engineering · AI Project Canvas | `src/fraud/features.py`, `tests/test_features.py`, `docs/ai_project_canvas.md` |
-| สิทธิพงษ์ นครขวาง 673380350-7 | Modeling & Experiments | `src/fraud/train.py`, `src/fraud/evaluate.py`, `tests/test_train.py`, `tests/test_evaluate.py`, `reports/experiments/` |
-| สหรัฐ งามเลิศ 673380349-2 | Serving & Performance | `serving/`, `tests/test_api.py`, `reports/serving/` |
-| โชติกานต์ วิลาชัย 673380362-0 | Monitoring & Drift | `monitoring/` |
-| ธรรมรักษ์ บุตราช 673380077-9 | Pipeline & Model Registry · Docs | `pipelines/`, `src/fraud/gate.py`, `tests/test_gate.py`, `tests/test_flow.py`, `Makefile`, `docker-compose.yml`, `docs/architecture.md`, `docs/model_release.md` |
+| นายกันตพัฒน์ โชติเจริญวัฒนะกุล 673380305-2 | หัวหน้ากลุ่ม · Repo & CI/CD | `.github/workflows/ci.yml`, `scripts/make_ci_data.py`, `scripts/ci_checks.py` |
+| นายเปรมสิริวัฒณ์ วราธิกานนท์ 673380360-4 | Data & Validation | `src/fraud/data.py`, `src/fraud/validate.py`, `data/sample/`, `scripts/eda.py`, `scripts/make_samples.py`, `scripts/schema_stats.py`, `reports/eda.md`, `tests/test_data.py`, `tests/test_validate.py` |
+| นายนาคินทร์ ประเสริฐยิ่ง 673380324-8 | Feature Engineering · AI Project Canvas | `src/fraud/features.py`, `tests/test_features.py`, `docs/ai_project_canvas.md` |
+| นายสิทธิพงษ์ นครขวาง 673380350-7 | Modeling & Experiments | `src/fraud/train.py`, `src/fraud/evaluate.py`, `tests/test_train.py`, `tests/test_evaluate.py`, `reports/experiments/` |
+| นายสหรัฐ งามเลิศ 673380349-2 | Serving & Performance | `serving/`, `tests/test_api.py`, `reports/serving/` |
+| นายโชติกานต์ วิลาชัย 673380362-0 | Monitoring & Drift | `monitoring/` |
+| นายธรรมรักษ์ บุตราช 673380077-9 | Pipeline & Model Registry · Docs | `pipelines/`, `src/fraud/gate.py`, `tests/test_gate.py`, `tests/test_flow.py`, `Makefile`, `docker-compose.yml`, `docs/architecture.md`, `docs/model_release.md` |
 
 ## ชุดข้อมูล
 
