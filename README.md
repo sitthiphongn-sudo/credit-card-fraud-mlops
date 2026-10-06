@@ -98,6 +98,16 @@ $LASTEXITCODE
 
 เปิด Docker ให้พร้อมก่อนรันคำสั่ง
 
+**คำสั่งเดียว (Windows PowerShell):** รันตั้งแต่ข้อมูลดิบ → ตรวจ schema → เทรน → ลงทะเบียน → Gate → champion → เปิด API, Prometheus และ Grafana แล้วรอจน `/health` ตอบ
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
+```
+
+สคริปต์ใช้ Python ใน `.venv` ให้อัตโนมัติ หยุดพร้อมบอกสาเหตุถ้าขั้นไหนไม่ผ่าน และจบด้วยผล `/health` (status `healthy`, threshold 0.51)
+
+หรือรันทีละขั้น
+
 บน PowerShell:
 
 ```powershell
